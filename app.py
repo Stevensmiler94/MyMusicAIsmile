@@ -28,14 +28,16 @@ if audio_file:
         # Carichiamo l'audio
         y, sr = librosa.load(audio_file, duration=30)
         
-        # --- FIX DEFINITIVO BPM ---
-        # Estraiamo solo il primo valore (tempo) ignorando il resto
+        # --- FIX BPM DEFINITIVO ---
         tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-        if isinstance(tempo_result, (tuple, list, np.ndarray)):
+        # Se riceve una tupla (BPM, frames), estraiamo solo il primo valore
+        if isinstance(tempo_result, tuple):
             bpm_val = tempo_result[0]
         else:
             bpm_val = tempo_result
-        bpm_final = float(bpm_val)
+        
+        # Convertiamo in numero singolo (float) in modo sicuro
+        bpm_final = float(np.ravel(bpm_val)[0])
         
         # Scala e Dati Tecnici
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
@@ -67,7 +69,7 @@ if audio_file:
 
         # Chat Interattiva
         st.divider()
-        st.subheader("💬 Chiedi all'Ingegnere AI")
+        st.subheader("💬 Parla con il tuo Mixing Engineer AI")
         
         for m in st.session_state.messages:
             with st.chat_message(m["role"]): st.markdown(m["content"])
@@ -85,7 +87,7 @@ if audio_file:
                 1. Se il Crest Factor è sopra 11dB, il Kick è debole: suggerisci Saturator (Sinoid Fold) o Glue Comp (Soft Clip).
                 2. Se i LUFS sono sopra -12dB, il mix è moscio: suggerisci Limiter o OTT.
                 3. Suggerisci plugin NATIVI ABLETON con settaggi precisi (Attack, Release, Threshold).
-                4. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti qui sopra.
+                4. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti qui sopra per dare un parere critico.
                 """
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -103,7 +105,7 @@ if audio_file:
                     except Exception as e:
                         st.error(f"Errore API: {e}")
             else:
-                st.warning("Inserisci la API Key!")
+                st.warning("Inserisci la API Key nella sidebar!")
 
 # Glossario
 st.divider()
