@@ -37,7 +37,7 @@ def get_platinum_stats(file_bytes):
     S = np.abs(librosa.stft(y_mono))
     freqs = librosa.fft_frequencies(sr=sr)
     
-    # EQ Focus & Air
+    # EQ & Air
     def get_e(f1, f2):
         idx = np.where((freqs >= f1) & (freqs <= f2))
         return np.mean(S[idx, :]) if len(idx) > 0 else 1e-9
@@ -48,11 +48,11 @@ def get_platinum_stats(file_bytes):
     # Sub Mono Check
     y_low_L = apply_filter(y_stereo[0], 20, 100, sr)
     y_low_R = apply_filter(y_stereo[1], 20, 100, sr)
-    sub_corr = np.corrcoef(y_low_L, y_low_R)[0,1]
+    sub_corr = np.corrcoef(y_low_L, y_low_R)[0, 1]
     if np.isnan(sub_corr): sub_corr = 1.0
     
     # Stereo & Stats
-    corr_val = np.corrcoef(y_stereo[0], y_stereo[1])[0,1]
+    corr_val = np.corrcoef(y_stereo[0], y_stereo[1])[0, 1]
     if np.isnan(corr_val): corr_val = 1.0
     width_val = float((1 - corr_val) * 100)
     
@@ -63,28 +63,34 @@ def get_platinum_stats(file_bytes):
     return {"y": y_mono, "y_s": y_stereo, "sr": sr, "lufs": float(lufs), "crest": float(crest), "air": float(air_val), 
             "psd": np.mean(S, axis=1), "freqs": freqs, "width": width_val, "sub_mono": float(sub_corr), "bands": bands}
 
-# --- SIDEBAR ---
+# --- SIDEBAR & ROBUST IMPORT ---
 with st.sidebar:
     st.title("🏢 Studio Manager")
     api_key = st.text_input("OpenAI API Key", type="password")
     genere = st.selectbox("Genere:", ["Progressive House (Garrix/Avicii)", "Techno", "Pop/Urban"])
-    sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}. Sii tecnico e critico."
+    sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}."
     
     st.divider()
     up_json = st.file_uploader("📂 Importa Scenario", type="json")
     if up_json:
         try:
-            d_l = json.load(up_json)
-            nome_p = d_l.get("nome", "Importato")
-            dati_p = d_l.get("dati", crea_struttura_progetto())
+            raw_data = json.load(up_json)
+            # Riparazione automatica struttura
+            nome_p = raw_data.get("nome", "Importato")
+            dati_raw = raw_data.get("dati", {})
+            dati_p = crea_struttura_progetto()
+            for key in dati_p.keys():
+                dati_p[key] = dati_raw.get(key, [])
+            
             st.session_state.progetti[nome_p] = dati_p
             st.session_state.progetto_attivo = nome_p
             st.rerun()
-        except: st.error("Errore nel file JSON")
+        except Exception as e:
+            st.error(f"Errore nel file: {str(e)}")
     
     st.session_state.progetto_attivo = st.selectbox("Scenario", list(st.session_state.progetti.keys()))
     curr = st.session_state.progetti[st.session_state.progetto_attivo]
-    st.download_button("📥 Esporta Studio", json.dumps({"nome": st.session_state.progetto_attivo, "dati": curr}), file_name="studio.json")
+    st.download_button("📥 Esporta Studio", json.dumps({"nome": st.session_state.progetto_attivo, "dati": curr}), file_name=f"{st.session_state.progetto_attivo}.json")
 
 # --- UI TABS ---
 st.title(f"🚀 {st.session_state.progetto_attivo} | {genere}")
@@ -133,11 +139,10 @@ with t2:
             fig3, ax3 = plt.subplots(); S_db = librosa.power_to_db(np.abs(librosa.stft(d['y'])), ref=np.max)
             librosa.display.specshow(S_db, sr=d['sr'], ax=ax3, y_axis='mel'); st.pyplot(fig3)
 
-        st.subheader("🎧 Monitor")
         target = st.radio("Filtro:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4500Hz)", "Alti (>8kHz)"], horizontal=True)
         f_p = d['y']
         if target == "Bassi (<250Hz)": f_p = apply_filter(d['y'], 20, 250, d['sr'])
-        elif target == "Medi (250-4500Hz)": f_p = apply_filter(d['y'], 250, 4500, d['sr'])
+        elif target == "Medi (250-4500Hz)": f_p = apply_filter(d['y'], 250, 4000, d['sr'])
         elif target == "Alti (>8kHz)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_p, sample_rate=d['sr'])
 
@@ -145,12 +150,12 @@ with t2:
         if cb1.button("🪄 Checklist Tecnica"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Air {d['air']:.2%}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}. ITA."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Air {d['air']:.2%}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}."}])
                 st.success(r.choices[0].message.content)
         if cb2.button("🧠 DEEP AI REVIEW"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Riflessione artistica mix {genere}. Air {d['air']:.2%}, Stereo {d['width']:.1f}%."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Riflessione mix {genere}. Air {d['air']:.2%}. Ponimi 3 domande."}])
                 st.info(r.choices[0].message.content)
 
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]:
@@ -179,12 +184,12 @@ with t3:
         if st.button("🚀 Strategia & Comparison"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"MIO: {d1['lufs']:.1f}LUFS vs REF: {d2['lufs']:.1f}LUFS."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"MIO: {d1['lufs']:.1f} vs REF: {d2['lufs']:.1f}"}])
                 st.success(r.choices[0].message.content)
         
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Cosa manca al mio drop?"):
+        if p_c := st.chat_input("Confronto drop..."):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
