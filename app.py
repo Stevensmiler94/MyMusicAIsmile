@@ -48,11 +48,11 @@ def get_platinum_stats(file_bytes):
     # Sub Mono Check
     y_low_L = apply_filter(y_stereo[0], 20, 100, sr)
     y_low_R = apply_filter(y_stereo[1], 20, 100, sr)
-    sub_corr = np.corrcoef(y_low_L, y_low_R)[0, 1]
+    sub_corr = np.corrcoef(y_low_L, y_low_R)[0,1]
     if np.isnan(sub_corr): sub_corr = 1.0
     
     # Stereo & Stats
-    corr_val = np.corrcoef(y_stereo[0], y_stereo[1])[0, 1]
+    corr_val = np.corrcoef(y_stereo[0], y_stereo[1])[0,1]
     if np.isnan(corr_val): corr_val = 1.0
     width_val = float((1 - corr_val) * 100)
     
@@ -68,15 +68,19 @@ with st.sidebar:
     st.title("🏢 Studio Manager")
     api_key = st.text_input("OpenAI API Key", type="password")
     genere = st.selectbox("Genere:", ["Progressive House (Garrix/Avicii)", "Techno", "Pop/Urban"])
-    sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}."
+    sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}. Sii tecnico e critico."
     
     st.divider()
     up_json = st.file_uploader("📂 Importa Scenario", type="json")
     if up_json:
         try:
-            d_l = json.load(up_json); st.session_state.progetti[d_l["nome"]] = d_l["dati"]
-            st.session_state.progetto_attivo = d_l["nome"]; st.rerun()
-        except: st.error("Errore JSON")
+            d_l = json.load(up_json)
+            nome_p = d_l.get("nome", "Importato")
+            dati_p = d_l.get("dati", crea_struttura_progetto())
+            st.session_state.progetti[nome_p] = dati_p
+            st.session_state.progetto_attivo = nome_p
+            st.rerun()
+        except: st.error("Errore nel file JSON")
     
     st.session_state.progetto_attivo = st.selectbox("Scenario", list(st.session_state.progetti.keys()))
     curr = st.session_state.progetti[st.session_state.progetto_attivo]
@@ -91,7 +95,7 @@ with t1:
     col_l, col_r = st.columns(2)
     with col_l:
         st.subheader("🖋️ Lyrics Generator")
-        mood = st.text_input("Mood", "nostalgia")
+        mood = st.text_input("Mood", "euphoria")
         if st.button("✨ Genera Testo"):
             if api_key:
                 client = OpenAI(api_key=api_key)
@@ -129,24 +133,24 @@ with t2:
             fig3, ax3 = plt.subplots(); S_db = librosa.power_to_db(np.abs(librosa.stft(d['y'])), ref=np.max)
             librosa.display.specshow(S_db, sr=d['sr'], ax=ax3, y_axis='mel'); st.pyplot(fig3)
 
-        target = st.radio("Isola Banda:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4500Hz)", "Alti (>8kHz)"], horizontal=True)
+        st.subheader("🎧 Monitor")
+        target = st.radio("Filtro:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4500Hz)", "Alti (>8kHz)"], horizontal=True)
         f_p = d['y']
         if target == "Bassi (<250Hz)": f_p = apply_filter(d['y'], 20, 250, d['sr'])
         elif target == "Medi (250-4500Hz)": f_p = apply_filter(d['y'], 250, 4500, d['sr'])
         elif target == "Alti (>8kHz)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_p, sample_rate=d['sr'])
 
-        # Pulsanti Analisi
         cb1, cb2 = st.columns(2)
         if cb1.button("🪄 Checklist Tecnica"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Air {d['air']:.2%}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}. Dammi 5 consigli tecnici."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Air {d['air']:.2%}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}. ITA."}])
                 st.success(r.choices[0].message.content)
         if cb2.button("🧠 DEEP AI REVIEW"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza l'equilibrio artistico di questo mix {genere}. Parametri: Air {d['air']:.2%}, Stereo {d['width']:.1f}%. Ponimi 3 domande filosofico-tecniche."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Riflessione artistica mix {genere}. Air {d['air']:.2%}, Stereo {d['width']:.1f}%."}])
                 st.info(r.choices[0].message.content)
 
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]:
@@ -155,12 +159,12 @@ with t2:
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}]+st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]+[{"role":"user","content":p_m}])
+                ans = r.choices[0].message.content
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user", "content":p_m})
-                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":r.choices[0].message.content}); st.rerun()
+                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":ans}); st.rerun()
 
 # --- TAB 3: COMPARISON ---
 with t3:
-    st.header("EQ Comparison & Deep Benchmarking")
     cl, cr = st.columns(2); f1, f2 = cl.file_uploader("Mio", key="c1"), cr.file_uploader("Ref", key="c2")
     if f1 and f2:
         d1, d2 = get_platinum_stats(f1), get_platinum_stats(f2)
@@ -172,18 +176,18 @@ with t3:
         m1, m2, m3 = st.columns(3)
         m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}"); m2.metric("Delta Sub Mono", f"{d1['sub_mono']-d2['sub_mono']:.2f}"); m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
 
-        if st.button("🚀 Strategia & Deep Comparison"):
+        if st.button("🚀 Strategia & Comparison"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                ctx = f"MIO: {d1['lufs']:.1f}LUFS, Air {d1['air']:.1%}. REF: {d2['lufs']:.1f}LUFS, Air {d2['air']:.1%}. Confronta l'energia emotiva tra i due brani."
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":ctx}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"MIO: {d1['lufs']:.1f}LUFS vs REF: {d2['lufs']:.1f}LUFS."}])
                 st.success(r.choices[0].message.content)
-
+        
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Perché il drop professionale suona più profondo?"):
+        if p_c := st.chat_input("Cosa manca al mio drop?"):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
+                ans = r.choices[0].message.content
                 st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user", "content":p_c})
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":r.choices[0].message.content}); st.rerun()
+                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":ans}); st.rerun()
