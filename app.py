@@ -7,79 +7,112 @@ import pyloudnorm as pdn
 import openai
 
 # Configurazione Pagina
-st.set_page_config(page_title="AI Ableton Mentor Pro", layout="wide", page_icon="🎚️")
+st.set_page_config(page_title="AI Music Master Assistant", layout="wide", page_icon="🎧")
 
 # Inizializzazione cronologia chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.title("🎚️ AI Ableton Mentor: Analisi Reale")
-st.write("L'IA analizza i dati del tuo file e ti dà consigli professionali su Ableton.")
+st.title("🎧 AI Music Master: Pro Studio Edition")
+st.write("Analisi avanzata: **Saturazione, Riverbero, Immagine Stereo e Vocal FX**.")
 
 # --- SIDEBAR ---
-st.sidebar.header("⚙️ Studio Config")
-user_key = st.sidebar.text_input("OpenAI API Key (sk-...)", type="password")
-audio_file = st.sidebar.file_uploader("Carica il tuo file audio", type=["wav", "mp3"])
+st.sidebar.header("⚙️ Studio Settings")
+user_key = st.sidebar.text_input("Chiave API OpenAI (sk-...)", type="password")
+mode = st.sidebar.selectbox("Modalità Analisi:", ["Mix Completo vs Reference", "Traccia Singola (Stem)"])
+
+if mode == "Mix Completo vs Reference":
+    uploaded_mix = st.sidebar.file_uploader("Il tuo Mix", type=["wav", "mp3"], key="mix")
+    uploaded_ref = st.sidebar.file_uploader("Reference", type=["wav", "mp3"], key="ref")
+    audio_to_analyze = uploaded_mix
+else:
+    uploaded_stem = st.sidebar.file_uploader("Carica la tua Traccia Singola", type=["wav", "mp3"], key="stem")
+    audio_to_analyze = uploaded_stem
+    uploaded_ref = None
 
 # --- LOGICA DI ANALISI AUDIO ---
-if audio_file:
-    with st.spinner("⚡ Analisi tecnica in corso..."):
-        y, sr = librosa.load(audio_file, duration=30)
+if audio_to_analyze:
+    with st.spinner("🚀 Eseguendo scansione tecnica..."):
+        # Carichiamo l'audio
+        y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # FIX BPM UNIVERSALE
-        tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-        bpm_val = tempo_result[0] if isinstance(tempo_result, (tuple, list, np.ndarray)) else tempo_result
-        bpm_final = float(bpm_val)
+        # --- FIX BPM DEFINITIVO (LIBROSA 0.10+) ---
+        tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
         
-        # Scala e Dati Tecnici
-        chroma = librosa.feature.chroma_stft(y=y, sr=sr)
-        key_detected = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][np.argmax(np.mean(chroma, axis=1))]
-        lufs = pdn.Meter(sr).integrated_loudness(y.reshape(-1, 1) if y.ndim == 1 else y.T)
-        crest = 20 * np.log10(np.max(np.abs(y)) / (np.sqrt(np.mean(y**2)) + 1e-9))
-        
-        # Dashboard Dati
-        st.divider()
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Loudness", f"{lufs:.1f} LUFS")
-        c2.metric("Crest Factor (Punch)", f"{crest:.1f} dB")
-        c3.metric("BPM", f"{int(round(bpm_final))}")
+        # Estraiamo il tempo (primo elemento della tupla o valore singolo)
+        if isinstance(tempo_result, tuple):
+            bpm_val = tempo_result[0]
+        else:
+            bpm_val = tempo_result
+            
+        # Assicuriamoci che bpm_final sia un numero reale (float)
+        bpm_final = float(np.ravel(bpm_val)[0])
 
-        # Chat Interattiva
+        # 2. RILEVAMENTO SCALA
+        chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
+        notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        key_detected = notes[np.argmax(np.mean(chroma, axis=1))]
+
+        # 3. LOUDNESS E DINAMICA
+        def get_lufs(y, rate):
+            data = y.reshape(-1, 1) if y.ndim == 1 else y.T
+            meter = pdn.Meter(rate)
+            return meter.integrated_loudness(data)
+        
+        lufs_m = get_lufs(y_mix, sr)
+        peak = np.max(np.abs(y_mix))
+        rms = np.sqrt(np.mean(y_mix**2))
+        crest_factor = 20 * np.log10(peak / (rms + 1e-9))
+
+        # --- LAYOUT TECNICO ---
+        st.divider()
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("BPM", f"{int(round(bpm_final))}")
+        c2.metric("Scala", f"{key_detected}")
+        c3.metric("Loudness", f"{lufs_m:.1f} LUFS")
+        c4.metric("Crest Factor", f"{crest_factor:.1f} dB")
+
+        # --- GRAFICI ---
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        spec = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
+        ax1.plot(spec, color="#00f2ff")
+        ax1.set_title("Spectral Balance (EQ)")
+        ax1.set_yscale('log')
+        librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax2, color='#ff00ff')
+        ax2.set_title("Transient Punch (5s)")
+        st.pyplot(fig)
+
+        # --- CHAT INTERATTIVA ---
         st.divider()
         st.subheader("💬 Parla con il tuo Mixing Engineer AI")
-        
-        for m in st.session_state.messages:
-            with st.chat_message(m["role"]): st.markdown(m["content"])
 
-        if prompt := st.chat_input("Esempio: Kick e basso suonano bene?"):
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+        if prompt := st.chat_input("Chiedi info su saturazione, riverberi o vocal chain..."):
             if user_key:
                 openai.api_key = user_key
                 
-                # ISTRUZIONE DI SISTEMA: Obbliga l'IA a usare i dati ed essere critica
-                # Inseriamo i dati DIRETTAMENTE nel prompt utente per non farli ignorare
-                content_ai = f"""
-                TU SEI UN MIXING ENGINEER DI ABLETON LIVE CATTIVO E TECNICO.
-                NON DIRE CHE NON PUOI ASCOLTARE. USA QUESTI DATI CHE HO ESTRATTO PER TE:
-                - Loudness rilevata: {lufs:.1f} LUFS
-                - Crest Factor rilevato: {crest:.1f} dB
-                - BPM rilevati: {int(bpm_final)}
-
-                Tuo compito:
-                1. Se il Crest Factor è sopra 11dB, il Kick è debole (manca di punch). Suggerisci Saturator o Glue Comp.
-                2. Se i LUFS sono sopra -10dB, il mix è moscio per la Progressive House.
-                3. Suggerisci plugin NATIVI ABLETON con settaggi precisi.
-                4. Se l'utente chiede 'come suonano', usa i numeri sopra per dare un verdetto spietato.
+                system_instruction = f"""
+                Agisci come un Senior Mixing Engineer cattivo di Ableton Live. 
+                I dati reali estratti sono: Loudness {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f} dB, BPM {int(round(bpm_final))}, Scala {key_detected}.
+                REGOLE:
+                1. Se il Crest Factor è alto (>11dB), il Kick è debole: suggerisci Saturator o Glue Comp.
+                2. Suggerisci plugin NATIVI ABLETON con settaggi precisi (Threshold, Attack, Release).
+                3. NON dire mai 'non posso sentire'. Usa i dati forniti per dare un parere critico e spietato.
                 """
-                
+
                 st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user"): st.markdown(prompt)
+                with st.chat_message("user"):
+                    st.markdown(prompt)
 
                 with st.chat_message("assistant"):
                     try:
-                        # Uniamo il sistema e la cronologia
+                        # Sintassi corretta per OpenAI v0.28
                         resp = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
-                            messages=[{"role": "system", "content": content_ai}] + st.session_state.messages
+                            messages=[{"role": "system", "content": system_instruction}] + st.session_state.messages
                         )
                         answer = resp['choices'][0]['message']['content']
                         st.markdown(answer)
@@ -89,5 +122,6 @@ if audio_file:
             else:
                 st.warning("⚠️ Inserisci la API Key nella sidebar!")
 
-if not audio_file:
-    st.info("👋 Carica un file audio per sbloccare l'analisi tecnica e la chat.")
+# --- FOOTER ---
+if not (uploaded_mix if mode == "Mix Completo vs Reference" else uploaded_stem):
+    st.info("👋 Carica i tuoi file per iniziare l'analisi.")
