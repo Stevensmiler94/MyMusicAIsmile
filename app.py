@@ -35,9 +35,11 @@ if audio_to_analyze:
     with st.spinner("🚀 Eseguendo scansione multiparametrica..."):
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM E SCALA
+        # 1. RILEVAMENTO BPM E SCALA (CORREZIONE ERRORE)
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
-        bpm_final = float(np.array(tempo_result).flatten()[0])
+        # librosa restituisce (tempo, beat_frames), noi prendiamo solo tempo
+        bpm_final = float(tempo_result[0]) if isinstance(tempo_result, tuple) else float(tempo_result)
+
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_detected = notes[np.argmax(np.mean(chroma, axis=1))]
@@ -48,7 +50,9 @@ if audio_to_analyze:
             return pdn.Meter(rate).integrated_loudness(data)
         
         lufs_m = get_lufs(y_mix, sr)
-        crest_factor = 20 * np.log10(np.max(np.abs(y_mix)) / (np.sqrt(np.mean(y_mix**2)) + 1e-9))
+        peak = np.max(np.abs(y_mix))
+        rms = np.sqrt(np.mean(y_mix**2))
+        crest_factor = 20 * np.log10(peak / (rms + 1e-9))
 
         # --- LAYOUT TECNICO ---
         st.divider()
@@ -68,30 +72,23 @@ if audio_to_analyze:
         ax2.set_title("Transient Punch (5s)")
         st.pyplot(fig)
 
-        # --- CHAT INTERATTIVA CON FOCALIZZAZIONE PARAMETRI ---
+        # --- CHAT INTERATTIVA ---
         st.divider()
         st.subheader("💬 Parla con il tuo Mixing Engineer AI")
-        st.info("💡 L'IA è ora ottimizzata per analizzare: Saturazione armonica, Reverb tails, Delay timing, Stereo Width e Compressione.")
 
         for msg in st.session_state.messages:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        if prompt := st.chat_input("Esempio: Come posso migliorare il riverbero sul Lead per non sporcare il mix?"):
+        if prompt := st.chat_input("Chiedi info su saturazione, riverberi o vocal chain..."):
             if user_key:
                 openai.api_key = user_key
                 
-                # ISTRUZIONI DI SISTEMA PER IL FOCUS PROFESSIONALE
+                # ISTRUZIONI DI SISTEMA
                 system_instruction = f"""
                 Agisci come un Master Producer di Progressive House (stile Martin Garrix/Avicii). 
                 DATI TECNICI: {lufs_m:.1f} LUFS, {crest_factor:.1f}dB Crest Factor, BPM {int(bpm_final)}, Scala {key_detected}.
-                
-                Focalizzati su questi parametri nelle tue risposte:
-                1. SATURAZIONE: Suggerisci distorsione armonica per far bucare il mix (es. Soft Clipping o OTT).
-                2. RIVERBERO/DELAY: Analizza se la 'coda' è troppo lunga o se serve Sidechain Reverb.
-                3. STEREO WIDTH: Spiega come allargare i Lead e tenere il Kick in Mono.
-                4. COMPRESSIONE: Fornisci Attack/Release precisi per il genere EDM.
-                5. VOCALS: Suggerisci catene FX per voci emozionali (Doubling, Pitching).
+                Focus: SATURAZIONE (OTT, Soft Clip), REVERB (Sidechain Hall), STEREO (Imager), COMPRESSIONE (Fast Attack), VOCALS (FX Layering).
                 """
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -100,7 +97,6 @@ if audio_to_analyze:
 
                 with st.chat_message("assistant"):
                     try:
-                        # Costruzione della memoria per l'API
                         api_messages = [{"role": "system", "content": system_instruction}]
                         for m in st.session_state.messages:
                             api_messages.append({"role": m["role"], "content": m["content"]})
