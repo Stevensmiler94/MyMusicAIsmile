@@ -11,7 +11,7 @@ import json
 # Configurazione Pagina
 st.set_page_config(page_title="AI Music Command Center", layout="wide", page_icon="🎛️")
 
-# --- INIZIALIZZAZIONE STRUTTURA DATI ---
+# --- INIZIALIZZAZIONE ---
 def crea_struttura_progetto():
     return {"songwriting": [], "mixing": [], "comparison": []}
 
@@ -20,62 +20,45 @@ if "progetti" not in st.session_state:
 if "progetto_attivo" not in st.session_state:
     st.session_state.progetto_attivo = "Default"
 
-# Auto-riparazione struttura progetti esistenti
+# Riparazione automatica
 for p in list(st.session_state.progetti.keys()):
     if not isinstance(st.session_state.progetti[p], dict) or "songwriting" not in st.session_state.progetti[p]:
         st.session_state.progetti[p] = crea_struttura_progetto()
 
-# --- SIDEBAR: STUDIO MANAGER ---
+# --- SIDEBAR ---
 st.sidebar.title("🏢 Studio Manager")
 user_key = st.sidebar.text_input("OpenAI API Key (sk-...)", type="password")
-st.session_state.progetto_attivo = st.sidebar.selectbox("Scenario Attivo", list(st.session_state.progetti.keys()))
+st.session_state.progetto_attivo = st.sidebar.selectbox("Scenario", list(st.session_state.progetti.keys()))
 
 if st.sidebar.button("➕ Nuovo Scenario"):
-    nuovo_nome = f"Progetto {len(st.session_state.progetti) + 1}"
-    st.session_state.progetti[nuovo_nome] = crea_struttura_progetto()
-    st.session_state.progetto_attivo = nuovo_nome
+    nome = f"Progetto {len(st.session_state.progetti) + 1}"
+    st.session_state.progetti[nome] = crea_struttura_progetto()
+    st.session_state.progetto_attivo = nome
     st.rerun()
 
-# --- SALVATAGGIO / CARICAMENTO JSON ---
+# Export/Import
 st.sidebar.divider()
-st.sidebar.subheader("💾 Backup su PC")
 exp_data = json.dumps({"nome": st.session_state.progetto_attivo, "dati": st.session_state.progetti[st.session_state.progetto_attivo]}, indent=4)
 st.sidebar.download_button("📥 Salva Progetto su PC", exp_data, file_name=f"{st.session_state.progetto_attivo}.json")
 
-carica_json = st.sidebar.file_uploader("📤 Carica Progetto da PC", type=["json"])
-if carica_json:
-    try:
-        d = json.load(carica_json)
-        st.session_state.progetti[d["nome"]] = d["dati"]
-        st.session_state.progetto_attivo = d["nome"]
-        st.rerun()
-    except: st.error("Errore JSON")
-
-# --- FUNZIONE AUDIO (FIX UNIVERSALE BPM) ---
+# --- FUNZIONE AUDIO (FIX DEFINITIVO BPM) ---
 def get_audio_stats(file):
     y, sr = librosa.load(file, duration=30)
-    
-    # Rilevamento BPM: Compatibile con tutte le versioni di Librosa
+    # Forza l'output in un array per estrarre il primo valore in modo sicuro
     tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-    # Se tempo_result è una tupla/lista (BPM, frames), prendiamo il primo elemento
-    if isinstance(tempo_result, (tuple, list, np.ndarray)):
-        bpm = float(tempo_result[0])
-    else:
-        bpm = float(tempo_result)
-    
-    # Loudness e Crest Factor
+    bpm = float(np.atleast_1d(tempo_result)[0])
+    # Loudness/Crest
     meter = pdn.Meter(sr)
     l_data = y.reshape(-1, 1) if y.ndim == 1 else y.T
     lufs = meter.integrated_loudness(l_data)
     crest = 20 * np.log10(np.max(np.abs(y)) / (np.sqrt(np.mean(y**2)) + 1e-9))
-    
     # Scala
     chroma = librosa.feature.chroma_stft(y=y, sr=sr)
     key = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'][np.argmax(np.mean(chroma, axis=1))]
     return y, sr, bpm, lufs, crest, key
 
-# --- INTERFACCIA ---
-st.title(f"🚀 {st.session_state.progetto_attivo}: Command Center")
+# --- UI ---
+st.title(f"🚀 {st.session_state.progetto_attivo}")
 t1, t2, t3 = st.tabs(["📝 Songwriting", "🎚️ Mixing Desk", "🏆 Comparison"])
 
 with t1:
@@ -83,12 +66,11 @@ with t1:
     memo = audio_recorder(text="Registra idea", icon_size="2x", key="v_rec")
     if memo: st.audio(memo)
     for m in st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]:
-        with st.chat_message(m["role"]): st.markdown(m["content"])
-    p_s = st.chat_input("Chiedi testo o piano roll...", key="in_s")
+        with st.chat_message(m["role"]): st.write(m["content"])
+    p_s = st.chat_input("Esempio: Fammi un piano roll per un lead emozionale", key="in_s")
     if p_s and user_key:
         openai.api_key = user_key
-        sys = "Sei un paroliere Progressive House. Scrivi testi in inglese e disegna il Piano Roll | X | - |."
-        r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": sys}] + st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"] + [{"role": "user", "content": p_s}])
+        r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Sei un paroliere Progressive House."}] + st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"] + [{"role": "user", "content": p_s}])
         ans = r.choices[0].message.content if hasattr(r, 'choices') else r['choices'][0]['message']['content']
         st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role": "user", "content": p_s})
         st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role": "assistant", "content": ans})
@@ -103,13 +85,13 @@ with t2:
         c1.metric("Loudness", f"{lufs:.1f} LUFS"); c2.metric("Crest Factor", f"{crest:.1f} dB")
         c3.metric("BPM", int(round(bpm))); c4.metric("Scala", key)
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]:
-            with st.chat_message(m["role"]): st.markdown(m["content"])
-        p_m = st.chat_input("Chiedi: Perché il mio kick non sposta aria?", key="in_m")
+            with st.chat_message(m["role"]): st.write(m["content"])
+        p_m = st.chat_input("Perché il mio kick non spinge?", key="in_m")
         if p_m and user_key:
             openai.api_key = user_key
-            full = f"[DATI: {lufs:.1f} LUFS, {crest:.1f}dB, {int(bpm)} BPM]. {p_m}"
-            r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Sei un Mixing Engineer CATTIVO. USA I DATI per insultare o lodare il mix con parametri Ableton."}] + st.session_state.progetti[st.session_state.progetto_attivo]["mixing"] + [{"role": "user", "content": full}])
-            ans = r.choices[0].message.content
+            ctx = f"[DATI: {lufs:.1f} LUFS, {crest:.1f}dB, {int(bpm)} BPM]. "
+            r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Sei un Mixing Engineer CATTIVO. USA I DATI per insultare o lodare il mix."}] + st.session_state.progetti[st.session_state.progetto_attivo]["mixing"] + [{"role": "user", "content": ctx + p_m}])
+            ans = r.choices[0].message.content if hasattr(r, 'choices') else r['choices'][0]['message']['content']
             st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role": "user", "content": p_m})
             st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role": "assistant", "content": ans})
             st.rerun()
@@ -123,13 +105,13 @@ with t3:
         y2, sr2, bpm2, lufs2, crest2, key2 = get_audio_stats(f2)
         st.write(f"📊 Diff Loudness: {lufs1-lufs2:.1f} | Diff Crest: {crest1-crest2:.1f}")
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
-            with st.chat_message(m["role"]): st.markdown(m["content"])
-        p_c = st.chat_input("Confronta kick e basso tra i due", key="in_c")
+            with st.chat_message(m["role"]): st.write(m["content"])
+        p_c = st.chat_input("Confronta i due file", key="in_c")
         if p_c and user_key:
             openai.api_key = user_key
-            full = f"[MIO: {lufs1:.1f} LUFS, {crest1:.1f}dB] vs [PRO: {lufs2:.1f} LUFS, {crest2:.1f}dB]. {p_c}"
-            r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Confronta i dati tecnici delle due tracce."}] + st.session_state.progetti[st.session_state.progetto_attivo]["comparison"] + [{"role": "user", "content": full}])
-            ans = r.choices[0].message.content
+            ctx = f"[MIO: {lufs1:.1f} LUFS, {crest1:.1f}dB] vs [PRO: {lufs2:.1f} LUFS, {crest2:.1f}dB]. "
+            r = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "system", "content": "Confronta tecnicamente le due tracce."}] + st.session_state.progetti[st.session_state.progetto_attivo]["comparison"] + [{"role": "user", "content": ctx + p_c}])
+            ans = r.choices[0].message.content if hasattr(r, 'choices') else r['choices'][0]['message']['content']
             st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role": "user", "content": p_c})
             st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role": "assistant", "content": ans})
             st.rerun()
