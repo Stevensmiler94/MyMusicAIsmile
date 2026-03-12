@@ -10,7 +10,10 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, lfilter
 
 # --- CONFIGURAZIONE ---
-st.set_page_config(page_title="AI Studio Pro: Quantum Edition", layout="wide", page_icon="🎹")
+st.set_page_config(page_title="SteveSmileAI Studio", layout="wide", page_icon="🎹")
+
+# URL LOGO (Versione RAW per GitHub)
+LOGO_URL = "https://raw.githubusercontent.com"
 
 def crea_struttura_progetto():
     return {"songwriting": [], "mixing": [], "comparison": []}
@@ -65,7 +68,8 @@ def get_platinum_stats(file_bytes):
 
 # --- SIDEBAR & ROBUST IMPORT ---
 with st.sidebar:
-    st.title("🏢 Studio Manager")
+    st.image(LOGO_URL, use_container_width=True)
+    st.title("🏢 SteveSmileAI Studio")
     api_key = st.text_input("OpenAI API Key", type="password")
     genere = st.selectbox("Genere:", ["Progressive House (Garrix/Avicii)", "Techno", "Pop/Urban"])
     sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}."
@@ -75,7 +79,6 @@ with st.sidebar:
     if up_json:
         try:
             raw_data = json.load(up_json)
-            # Riparazione automatica struttura
             nome_p = raw_data.get("nome", "Importato")
             dati_raw = raw_data.get("dati", {})
             dati_p = crea_struttura_progetto()
@@ -93,7 +96,7 @@ with st.sidebar:
     st.download_button("📥 Esporta Studio", json.dumps({"nome": st.session_state.progetto_attivo, "dati": curr}), file_name=f"{st.session_state.progetto_attivo}.json")
 
 # --- UI TABS ---
-st.title(f"🚀 {st.session_state.progetto_attivo} | {genere}")
+st.title(f"🚀 SteveSmileAI | {st.session_state.progetto_attivo} | {genere}")
 t1, t2, t3 = st.tabs(["📝 Songwriting & Lyrics", "🎚️ Mixing Desk", "🏆 Comparison & EQ"])
 
 # --- TAB 1: SONGWRITING ---
@@ -179,12 +182,14 @@ with t3:
         ax_eq.set_xlim(20, 20000); ax_eq.legend(); plt.grid(True, which="both", alpha=0.1); st.pyplot(fig_eq)
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}"); m2.metric("Delta Sub Mono", f"{d1['sub_mono']-d2['sub_mono']:.2f}"); m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
+        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}")
+        m2.metric("Delta Sub Mono", f"{d1['sub_mono']-d2['sub_mono']:.2f}")
+        m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
 
         if st.button("🚀 Strategia & Comparison"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"MIO: {d1['lufs']:.1f} vs REF: {d2['lufs']:.1f}"}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Confronta questi dati. MIO: {d1['lufs']:.1f} LUFS, Air {d1['air']:.2%}. REF: {d2['lufs']:.1f} LUFS, Air {d2['air']:.2%}."}])
                 st.success(r.choices[0].message.content)
         
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
