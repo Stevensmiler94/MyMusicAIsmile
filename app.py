@@ -35,26 +35,20 @@ if audio_to_analyze:
     with st.spinner("🚀 Eseguendo scansione multiparametrica..."):
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM (FIX DEFINITIVO)
+        # 1. RILEVAMENTO BPM
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
-        
-        # Gestione output librosa (può essere float o tuple)
         if isinstance(tempo_result, (tuple, list, np.ndarray)):
-            # Se è una collezione, prendiamo il primo elemento (il tempo)
             bpm_val = tempo_result[0]
         else:
-            # Se è già un numero singolo
             bpm_val = tempo_result
-            
-        # Forza la conversione a float standard di Python
-        bpm_final = float(np.array(bpm_val).item())
+        bpm_final = float(bpm_val)
 
-        # Rilevamento Scala
+        # 2. RILEVAMENTO SCALA
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_detected = notes[np.argmax(np.mean(chroma, axis=1))]
 
-        # 2. LOUDNESS E DINAMICA
+        # 3. LOUDNESS E DINAMICA
         def get_lufs(y, rate):
             data = y.reshape(-1, 1) if y.ndim == 1 else y.T
             return pdn.Meter(rate).integrated_loudness(data)
@@ -114,7 +108,8 @@ if audio_to_analyze:
                             model="gpt-4o-mini",
                             messages=api_messages
                         )
-                        answer = response['choices']['message']['content']
+                        # --- CORREZIONE QUI PER EVITARE TYPEERROR ---
+                        answer = response.choices[0].message.content
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     except Exception as e:
