@@ -36,13 +36,17 @@ if audio_to_analyze:
         # Carichiamo l'audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # --- FIX BPM DEFINITIVO (STRUTTURA ROBUSTA) ---
+        # --- FIX BPM DEFINITIVO (COMPATIBILE PYTHON 3.14) ---
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
         
-        # Estraiamo il primo valore numerico in modo universale
-        # Funziona se tempo_result è: float, np.ndarray, list o tuple
-        bpm_val = np.array(tempo_result).flatten()[0]
-        bpm_final = float(bpm_val)
+        # Gestione robusta dell'output di librosa
+        if isinstance(tempo_result, (tuple, list)):
+            bpm_val = tempo_result[0] # Prende il primo elemento (il tempo)
+        else:
+            bpm_val = tempo_result
+            
+        # Converte in float puro rimuovendo eventuali strutture array residui
+        bpm_final = float(np.ravel(bpm_val)[0])
 
         # 2. RILEVAMENTO SCALA
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
@@ -74,7 +78,7 @@ if audio_to_analyze:
         ax1.plot(spec, color="#00f2ff")
         ax1.set_title("Spectral Balance (EQ)")
         ax1.set_yscale('log')
-        librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax2, color='#ff00ff')
+        librosa.display.waveshow(y_mix[:int(sr*5)], sr=sr, ax=ax2, color='#ff00ff')
         ax2.set_title("Transient Punch (5s)")
         st.pyplot(fig)
 
@@ -92,8 +96,8 @@ if audio_to_analyze:
                 
                 system_instruction = f"""
                 Agisci come un Senior Mixing Engineer cattivo di Ableton Live. 
-                I DATI REALI ESTRATTI DAL FILE SONO: Loudness {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f} dB, BPM {int(round(bpm_final))}, Scala {key_detected}.
-                NON dire mai 'non posso sentire'. Usa questi numeri per dare un parere critico.
+                DATI REALI ESTRATTI: Loudness {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f} dB, BPM {int(round(bpm_final))}, Scala {key_detected}.
+                NON dire mai 'non posso sentire'. Usa questi numeri per dare un parere critico e spietato.
                 REGOLE:
                 1. Se il Crest Factor è alto (>11dB), il Kick è MOLLO. Suggerisci Saturator o Glue Comp.
                 2. Suggerisci plugin NATIVI ABLETON con settaggi precisi.
@@ -110,7 +114,7 @@ if audio_to_analyze:
                             model="gpt-4o-mini",
                             messages=[{"role": "system", "content": system_instruction}] + st.session_state.messages
                         )
-                        # Accesso tramite dizionario per compatibilità
+                        # Accesso tramite dizionario per massima compatibilità
                         answer = resp['choices'][0]['message']['content']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
