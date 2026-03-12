@@ -1,0 +1,7 @@
+streamlit
+librosa
+numpy
+matplotlib
+pyloudnorm
+openai==0.28
+pandas
