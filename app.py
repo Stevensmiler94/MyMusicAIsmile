@@ -31,18 +31,11 @@ else:
 # --- LOGICA DI ANALISI AUDIO ---
 if audio_to_analyze:
     with st.spinner("🚀 Analizzando l'audio e rilevando BPM/Scala..."):
-        # Caricamento Audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM (Correzione definitiva per versioni diverse di librosa)
+        # Rilevamento BPM
         tempo_data = librosa.beat.beat_track(y=y_mix, sr=sr)
-        # Estraiamo il valore numerico indipendentemente dal formato di output
-        if isinstance(tempo_data, tuple):
-            bpm_val = tempo_data[0]
-        else:
-            bpm_val = tempo_data
-        
-        # Convertiamo in float standard di Python per evitare errori con int()
+        bpm_val = tempo_data[0] if isinstance(tempo_data, (list, np.ndarray, tuple)) else tempo_data
         bpm_final = float(np.atleast_1d(bpm_val)[0])
         
         # Rilevamento Scala
@@ -51,15 +44,14 @@ if audio_to_analyze:
         key_idx = np.argmax(np.mean(chroma, axis=1))
         key_detected = notes[key_idx]
 
-        # 2. LOUDNESS (LUFS)
+        # Loudness
         def get_lufs(y, rate):
             data = y.reshape(-1, 1) if y.ndim == 1 else y.T
             meter = pdn.Meter(rate)
             return meter.integrated_loudness(data)
-
         lufs_m = get_lufs(y_mix, sr)
         
-        # 3. CREST FACTOR (DINAMICA)
+        # Dinamica
         peak = np.max(np.abs(y_mix))
         rms = np.sqrt(np.mean(y_mix**2))
         crest_factor = 20 * np.log10(peak / (rms + 1e-9))
@@ -75,7 +67,6 @@ if audio_to_analyze:
         # --- GRAFICI ---
         st.subheader("📊 Visualizzazione Tecnica")
         col_g1, col_g2 = st.columns(2)
-        
         with col_g1:
             spec_m = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
             fig_eq, ax_eq = plt.subplots(figsize=(10, 5))
@@ -83,16 +74,15 @@ if audio_to_analyze:
             ax_eq.set_title("Spettro di Frequenza")
             ax_eq.set_yscale('log')
             st.pyplot(fig_eq)
-
         with col_g2:
             fig_w, ax_w = plt.subplots(figsize=(10, 5))
             librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax_w, color='#ff00ff')
             ax_w.set_title("Zoom Transienti (Primi 5s)")
             st.pyplot(fig_w)
 
-        # --- SEZIONE SONGWRITING ---
+        # --- SEZIONE AI ---
         st.divider()
-        st.subheader("✍️ AI Songwriter & Vocal Guide")
+        st.subheader("🤖 Assistente Creativo & Tecnico")
         guida_testo = st.text_area("Di cosa deve parlare il testo?", "Nostalgia, summer nights, feeling alive")
         
         col_btn1, col_btn2 = st.columns(2)
@@ -104,7 +94,8 @@ if audio_to_analyze:
                 try:
                     resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_song}])
                     st.success("🎤 Proposta Creativa:")
-                    st.write(resp.choices.message.content)
+                    # CORREZIONE QUI:
+                    st.write(resp['choices'][0]['message']['content'])
                 except Exception as e:
                     st.error(f"Errore API: {e}")
             else:
@@ -117,7 +108,8 @@ if audio_to_analyze:
                 try:
                     resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_mix}])
                     st.info("🎧 Suggerimenti Mix:")
-                    st.write(resp.choices.message.content)
+                    # CORREZIONE QUI:
+                    st.write(resp['choices'][0]['message']['content'])
                 except Exception as e:
                     st.error(f"Errore API: {e}")
 
