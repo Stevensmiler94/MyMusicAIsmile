@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, lfilter
 
 # --- CONFIGURAZIONE ---
-st.set_page_config(page_title="AI Studio Pro: Producer Edition", layout="wide", page_icon="🎧")
+st.set_page_config(page_title="AI Studio Pro: Garrix/Avicii Edition", layout="wide", page_icon="🎧")
 
 def crea_struttura_progetto():
     return {"songwriting": [], "mixing": [], "comparison": []}
@@ -23,31 +23,32 @@ if "progetto_attivo" not in st.session_state:
 # --- UTILS AUDIO ---
 def apply_filter(data, lowcut, highcut, fs):
     nyq = 0.5 * fs
-    low = max(0.01, lowcut / nyq)
-    high = min(0.99, highcut / nyq)
+    low, high = max(0.01, lowcut / nyq), min(0.99, highcut / nyq)
     b, a = butter(5, [low, high], btype='band')
     return lfilter(b, a, data)
 
 @st.cache_data
 def get_pro_stats(file_bytes):
-    y_stereo, sr = librosa.load(file_bytes, duration=45, mono=False)
+    y_stereo, sr = librosa.load(file_bytes, duration=30, mono=False)
     if y_stereo.ndim == 1: y_stereo = np.vstack([y_stereo, y_stereo])
     y_mono = librosa.to_mono(y_stereo)
     
-    # 1. AIR & TENSION (Analisi Garrix/Avicii)
+    # Spettro per EQ Curve
     S = np.abs(librosa.stft(y_mono))
     freqs = librosa.fft_frequencies(sr=sr)
+    avg_psd = np.mean(S, axis=1)
+    
+    # Air & Tension
     air_energy = np.mean(S[np.where(freqs >= 12000), :]) / (np.mean(S) + 1e-9)
     rms = librosa.feature.rms(y=y_mono)
     tension = np.std(rms) * 100
     
-    # 2. BASE STATS
+    # Stats base
     lufs = pdn.Meter(sr).integrated_loudness(y_stereo.T)
     crest = 20 * np.log10(np.max(np.abs(y_mono)) / (np.mean(rms) + 1e-9))
-    phase = np.corrcoef(y_stereo)[0,1]
     
-    return {"y": y_mono, "sr": sr, "lufs": lufs, "phase": phase, "crest": crest,
-            "air": air_energy, "tension": tension}
+    return {"y": y_mono, "sr": sr, "lufs": lufs, "crest": crest, "air": air_energy, 
+            "tension": tension, "psd": avg_psd, "freqs": freqs}
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -55,18 +56,12 @@ with st.sidebar:
     api_key = st.text_input("OpenAI API Key", type="password")
     genere = st.selectbox("Genre Preset:", ["Progressive House (Garrix/Avicii)", "Techno", "Pop/Urban"])
     
-    sys_prompts = {
-        "Progressive House (Garrix/Avicii)": "Sei un produttore alla STMPD RCRDS. Focus su Euforia, Sidechain e Air (>12kHz).",
-        "Techno": "Sei un produttore Techno. Focus su Rumble e Kick Drive.",
-        "Pop/Urban": "Sei un produttore Pop. Focus su Vocals e 808."
-    }
-
     st.divider()
     up_json = st.file_uploader("📂 Importa Progetto", type="json")
     if up_json:
-        d_l = json.load(up_json)
-        st.session_state.progetti[d_l["nome"]] = d_l["dati"]
-        st.session_state.progetto_attivo = d_l["nome"]; st.rerun()
+        d_load = json.load(up_json)
+        st.session_state.progetti[d_load["nome"]] = d_load["dati"]
+        st.session_state.progetto_attivo = d_load["nome"]; st.rerun()
 
     st.session_state.progetto_attivo = st.selectbox("Scenario", list(st.session_state.progetti.keys()))
     curr = st.session_state.progetti[st.session_state.progetto_attivo]
@@ -74,75 +69,59 @@ with st.sidebar:
 
 # --- UI TABS ---
 st.title(f"🚀 {st.session_state.progetto_attivo}")
-t1, t2, t3 = st.tabs(["📝 Songwriting", "🎚️ Mixing Desk", "🏆 Mastering Comparison"])
-
-with t1:
-    st.header("Emotional Ideation")
-    audio_recorder(text="Registra idea")
-    for m in st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]:
-        with st.chat_message(m["role"]): st.write(m["content"])
-    if p := st.chat_input("Scrivi qui..."):
-        if api_key:
-            client = OpenAI(api_key=api_key)
-            res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":"Sei un esperto songwriter."}]+st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]+[{"role":"user","content":p}])
-            ans = res.choices[0].message.content
-            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"user","content":p})
-            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant","content":ans}); st.rerun()
+t1, t2, t3 = st.tabs(["📝 Songwriting", "🎚️ Mixing Desk", "🏆 Comparison & EQ Curve"])
 
 with t2:
-    st.header("Analisi Mix")
-    f_mix = st.file_uploader("Carica Mix", type=["wav", "mp3"], key="u_mix")
+    st.header("Analisi Energetica")
+    f_mix = st.file_uploader("Carica Mix", type=["wav", "mp3"], key="mix")
     if f_mix:
         d = get_pro_stats(f_mix)
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Loudness", f"{d['lufs']:.1f} LUFS")
         c2.metric("Euphoric Air", f"{d['air']*100:.1f}%")
         c3.metric("Tension Score", f"{d['tension']:.1f}")
-        c4.metric("Punch/Crest", f"{d['crest']:.1f} dB")
+        c4.metric("Punch (Crest)", f"{d['crest']:.1f} dB")
         
-        target = st.radio("Isolamento:", ["Tutto", "Bassi", "Medi", "Alti (Air)"], horizontal=True)
+        st.write("**Monitor Isolamento**")
+        target = st.radio("Filtro:", ["Tutto", "Bassi", "Alti (Air)"], horizontal=True)
         f_a = d['y']
-        if target == "Bassi": f_a = apply_filter(d['y'], 20, 200, d['sr'])
-        elif target == "Alti (Air)": f_a = apply_filter(d['y'], 8000, 15000, d['sr'])
+        if target == "Bassi": f_a = apply_filter(d['y'], 20, 250, d['sr'])
+        elif target == "Alti (Air)": f_a = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_a, sample_rate=d['sr'])
 
-        if st.button("🪄 Analisi Strategica AI"):
-            if api_key:
-                client = OpenAI(api_key=api_key)
-                prompt = f"Dati: Air {d['air']:.2f}, Tension {d['tension']:.1f}, LUFS {d['lufs']:.1f}. Analizza stile {genere}."
-                res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_prompts[genere]}, {"role":"user","content":prompt}])
-                st.success(res.choices[0].message.content)
-
 with t3:
-    st.header("🏆 Mastering Comparison (A/B Test)")
-    st.info("Confronta il tuo mix con una traccia Reference di Garrix o Avicii.")
-    col_a, col_b = st.columns(2)
-    f_my = col_a.file_uploader("Mio Mix", type=["wav", "mp3"], key="c_my")
-    f_ref = col_b.file_uploader("Reference Pro", type=["wav", "mp3"], key="c_ref")
+    st.header("Visual EQ Comparison")
+    col_l, col_r = st.columns(2)
+    f1 = col_l.file_uploader("Il tuo Mix", type=["wav", "mp3"], key="c1")
+    f2 = col_r.file_uploader("Reference Pro", type=["wav", "mp3"], key="c2")
     
-    if f_my and f_ref:
-        d_my, d_ref = get_pro_stats(f_my), get_pro_stats(f_ref)
+    if f1 and f2:
+        d1, d2 = get_pro_stats(f1), get_pro_stats(f2)
         
-        # Dashboard Comparativa
-        st.subheader("📊 Analisi Differenziale")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Delta LUFS (Volume)", f"{d_my['lufs']-d_ref['lufs']:.1f} LUFS", help="Cerca di arrivare a +/- 1.0 rispetto alla ref")
-        m2.metric("Delta Air (Euphoria)", f"{(d_my['air']-d_ref['air'])*100:.1f}%", help="Se negativo, aggiungi un High Shelf")
-        m3.metric("Delta Punch", f"{d_my['crest']-d_ref['crest']:.1f} dB")
-
-        if st.button("🚀 Genera Piano d'Azione Mastering"):
+        # Grafico EQ Sovrapposto
+        st.subheader("📈 Analisi Spettrale Comparativa")
+        fig, ax = plt.subplots(figsize=(12, 4))
+        ax.semilogx(d1['freqs'], librosa.amplitude_to_db(d1['psd']), label="Mio Mix", color="cyan")
+        ax.semilogx(d2['freqs'], librosa.amplitude_to_db(d2['psd']), label="Reference Pro", color="orange", alpha=0.6)
+        ax.set_xlim(20, 20000); ax.legend(); ax.grid(True, which="both", ls="-", alpha=0.2)
+        st.pyplot(fig)
+        
+        # AI Insight
+        if st.button("🚀 Analizza Differenze con AI"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                ctx = (f"MIO: {d_my['lufs']:.1f} LUFS, Air {d_my['air']:.2%}, Punch {d_my['crest']:.1f}dB. "
-                       f"REF: {d_ref['lufs']:.1f} LUFS, Air {d_ref['ref']:.2%}, Punch {d_ref['crest']:.1f}dB.")
-                res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":"Sei un Mastering Engineer Pro."},{"role":"user","content":ctx + " Suggerisci i plugin esatti da usare."}])
-                st.write(res.choices[0].message.content)
+                ctx = (f"Mio: {d1['lufs']:.1f} LUFS, Air {d1['air']:.2%}, Tension {d1['tension']:.1f}. "
+                       f"Ref: {d2['lufs']:.1f} LUFS, Air {d2['air']:.2%}, Tension {d2['tension']:.1f}.")
+                ans = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":"Sei un produttore Progressive House. Confronta i dati e suggerisci interventi su EQ e Sidechain."}, {"role":"user","content":ctx}])
+                st.success(ans.choices[0].message.content)
 
-        for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
-            with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Cosa manca al mio drop?"):
-            if api_key:
-                client = OpenAI(api_key=api_key)
-                ans = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_prompts[genere]}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user","content":p_c})
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant","content":ans.choices[0].message.content}); st.rerun()
+with t1:
+    st.header("Songwriting Chat")
+    for m in st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]:
+        with st.chat_message(m["role"]): st.write(m["content"])
+    if p := st.chat_input("Consigli melodia..."):
+        if api_key:
+            client = OpenAI(api_key=api_key)
+            res = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":"Sei un esperto songwriter."}]+st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]+[{"role":"user","content":p}])
+            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"user","content":p})
+            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant","content":res.choices[0].message.content}); st.rerun()
