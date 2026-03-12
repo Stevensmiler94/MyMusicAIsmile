@@ -26,11 +26,13 @@ if audio_file:
         # Caricamento Audio
         y, sr = librosa.load(audio_file, duration=30)
         
-        # --- FIX BPM COMPATIBILE PYTHON 3.14 ---
+        # --- FIX BPM UNIVERSALE ---
         tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-        # Estraiamo il valore scalare del tempo in modo sicuro
-        bpm_val = np.array(tempo_result).flatten()[0]
-        bpm = float(bpm_val)
+        # Estraiamo il valore scalare in modo sicuro
+        if isinstance(tempo_result, (tuple, list, np.ndarray)):
+            bpm = float(np.ravel(tempo_result)[0])
+        else:
+            bpm = float(tempo_result)
         
         # Analisi Loudness e Crest Factor
         lufs = pdn.Meter(sr).integrated_loudness(y.reshape(-1, 1) if y.ndim == 1 else y.T)
@@ -64,6 +66,7 @@ if audio_file:
                 2. Suggerisci plugin NATIVI ABLETON (Saturator, Glue Compressor, EQ Eight, OTT).
                 3. Fornisci valori precisi (Threshold, Attack, Dry/Wet).
                 4. Chiedi all'utente: 'Tu come hai impostato il tuo [Plugin]?' per forzare il miglioramento.
+                5. Se ti chiede se suonano bene, usa i dati numerici per dare un verdetto spietato.
                 """
                 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -71,11 +74,12 @@ if audio_file:
 
                 with st.chat_message("assistant"):
                     try:
+                        # Utilizzo della sintassi dizionario per compatibilità openai 0.28
                         resp = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
                             messages=[{"role": "system", "content": content_ai}] + st.session_state.messages
                         )
-                        answer = resp['choices']['message']['content']
+                        answer = resp['choices'][0]['message']['content']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     except Exception as e:
