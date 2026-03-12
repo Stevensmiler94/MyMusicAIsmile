@@ -12,7 +12,7 @@ from scipy.signal import butter, lfilter
 st.set_page_config(page_title="SteveSmileAI Studio", layout="wide", page_icon="🎹")
 
 # URL LOGO (Versione RAW corretta)
-LOGO_URL = "https://github.com"
+LOGO_URL = "https://github.com/Stevensmiler94/MyMusicAIsmile/blob/main/869E25C4-E9F2-4259-9150-F9BFC5C092FC_page-0001.jpg?raw=true"
 
 def crea_struttura_progetto():
     return {"songwriting": [], "mixing": [], "comparison": []}
