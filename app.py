@@ -4,7 +4,6 @@ import librosa.display
 import numpy as np
 import pyloudnorm as pdn
 from openai import OpenAI
-from audio_recorder_streamlit import audio_recorder
 import json
 import matplotlib.pyplot as plt
 from scipy.signal import butter, lfilter
@@ -12,8 +11,8 @@ from scipy.signal import butter, lfilter
 # --- CONFIGURAZIONE ---
 st.set_page_config(page_title="SteveSmileAI Studio", layout="wide", page_icon="🎹")
 
-# URL LOGO (Versione RAW per GitHub)
-LOGO_URL = "https://github.com/Stevensmiler94/MyMusicAIsmile/blob/main/869E25C4-E9F2-4259-9150-F9BFC5C092FC_page-0001.jpg?raw=true"
+# URL LOGO (Versione RAW corretta)
+LOGO_URL = "https://github.com"
 
 def crea_struttura_progetto():
     return {"songwriting": [], "mixing": [], "comparison": []}
@@ -40,13 +39,18 @@ def get_platinum_stats(file_bytes):
     S = np.abs(librosa.stft(y_mono))
     freqs = librosa.fft_frequencies(sr=sr)
     
-    # EQ & Air
+    # EQ & Air Analysis
     def get_e(f1, f2):
         idx = np.where((freqs >= f1) & (freqs <= f2))
         return np.mean(S[idx, :]) if len(idx) > 0 else 1e-9
+    
     l, m, h = get_e(20, 250), get_e(250, 4500), get_e(4500, 20000)
     bands = {"Bassi": l, "Medi": m, "Alti": h}
     air_val = h / (l + m + h + 1e-9)
+    
+    # Correlation & Phase (NEW: Phase value)
+    corr_matrix = np.corrcoef(y_stereo[0], y_stereo[1])
+    phase_val = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 1.0
     
     # Sub Mono Check
     y_low_L = apply_filter(y_stereo[0], 20, 100, sr)
@@ -54,24 +58,23 @@ def get_platinum_stats(file_bytes):
     sub_corr = np.corrcoef(y_low_L, y_low_R)[0, 1]
     if np.isnan(sub_corr): sub_corr = 1.0
     
-    # Stereo & Stats
-    corr_val = np.corrcoef(y_stereo[0], y_stereo[1])[0, 1]
-    if np.isnan(corr_val): corr_val = 1.0
-    width_val = float((1 - corr_val) * 100)
+    # Stereo Width
+    width_val = float((1 - phase_val) * 100)
     
     lufs = pdn.Meter(sr).integrated_loudness(y_stereo.T)
     rms = np.sqrt(np.mean(y_mono**2)) + 1e-9
     crest = 20 * np.log10(np.max(np.abs(y_mono)) / rms)
     
-    return {"y": y_mono, "y_s": y_stereo, "sr": sr, "lufs": float(lufs), "crest": float(crest), "air": float(air_val), 
-            "psd": np.mean(S, axis=1), "freqs": freqs, "width": width_val, "sub_mono": float(sub_corr), "bands": bands}
+    return {"y": y_mono, "y_s": y_stereo, "sr": sr, "lufs": float(lufs), "crest": float(crest), 
+            "air": float(air_val), "psd": np.mean(S, axis=1), "freqs": freqs, 
+            "width": width_val, "sub_mono": float(sub_corr), "bands": bands, "phase": phase_val}
 
-# --- SIDEBAR & ROBUST IMPORT ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.image(LOGO_URL, use_container_width=True)
     st.title("🏢 SteveSmileAI Studio")
     api_key = st.text_input("OpenAI API Key", type="password")
-    genere = st.selectbox("Genere:", ["Progressive House (Garrix/Avicii)", "Techno", "Pop/Urban"])
+    genere = st.selectbox("Genere:", ["Progressive House", "Techno", "Pop/Urban"])
     sys_inst = f"Rispondi SEMPRE in ITALIANO. Sei un produttore esperto di {genere}."
     
     st.divider()
@@ -84,7 +87,6 @@ with st.sidebar:
             dati_p = crea_struttura_progetto()
             for key in dati_p.keys():
                 dati_p[key] = dati_raw.get(key, [])
-            
             st.session_state.progetti[nome_p] = dati_p
             st.session_state.progetto_attivo = nome_p
             st.rerun()
@@ -97,8 +99,7 @@ with st.sidebar:
 
 # --- UI TABS ---
 st.title(f"🚀 SteveSmileAI | {st.session_state.progetto_attivo} | {genere}")
-t1, t2, t3 = st.tabs(["📝 Songwriting & Lyrics", "🎚️ Mixing Desk", "🏆 Comparison & EQ"])
-
+t1, t2, t3 = st.tabs(["📝 Songwriting", "🎚️ Mixing Desk", "🏆 Comparison & EQ Tips"])
 # --- TAB 1: SONGWRITING ---
 with t1:
     col_l, col_r = st.columns(2)
@@ -128,9 +129,13 @@ with t2:
     if f_mix:
         d = get_platinum_stats(f_mix)
         c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Loudness", f"{d['lufs']:.1f} LUFS"); c2.metric("Air", f"{d['air']*100:.1f}%")
-        c3.metric("Stereo Width", f"{d['width']:.1f}%"); c4.metric("Sub Mono", f"{d['sub_mono']:.2f}")
+        c1.metric("Loudness", f"{d['lufs']:.1f} LUFS"); c2.metric("Stereo Width", f"{d['width']:.1f}%")
+        c3.metric("Phase Correlation", f"{d['phase']:.2f}"); c4.metric("Sub Mono", f"{d['sub_mono']:.2f}")
         c5.metric("EQ Focus", max(d['bands'], key=d['bands'].get))
+
+        # Correlation Meter Visual
+        st.write("Correlation Meter (-1 Opposizione | +1 Fase)")
+        st.progress(float((d['phase'] + 1) / 2))
 
         v1, v2, v3 = st.columns(3)
         with v1: 
@@ -142,18 +147,18 @@ with t2:
             fig3, ax3 = plt.subplots(); S_db = librosa.power_to_db(np.abs(librosa.stft(d['y'])), ref=np.max)
             librosa.display.specshow(S_db, sr=d['sr'], ax=ax3, y_axis='mel'); st.pyplot(fig3)
 
-        target = st.radio("Filtro:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4500Hz)", "Alti (>8kHz)"], horizontal=True)
+        target = st.radio("Filtro:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4k)", "Alti (>8k)"], horizontal=True)
         f_p = d['y']
         if target == "Bassi (<250Hz)": f_p = apply_filter(d['y'], 20, 250, d['sr'])
-        elif target == "Medi (250-4500Hz)": f_p = apply_filter(d['y'], 250, 4000, d['sr'])
-        elif target == "Alti (>8kHz)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
+        elif target == "Medi (250-4k)": f_p = apply_filter(d['y'], 250, 4000, d['sr'])
+        elif target == "Alti (>8k)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_p, sample_rate=d['sr'])
 
         cb1, cb2 = st.columns(2)
         if cb1.button("🪄 Checklist Tecnica"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Air {d['air']:.2%}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}."}])
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Analizza: Fase {d['phase']:.2f}, Width {d['width']:.1f}%, Sub-Mono {d['sub_mono']:.2f}."}])
                 st.success(r.choices[0].message.content)
         if cb2.button("🧠 DEEP AI REVIEW"):
             if api_key:
@@ -171,7 +176,7 @@ with t2:
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user", "content":p_m})
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":ans}); st.rerun()
 
-# --- TAB 3: COMPARISON ---
+# --- TAB 3: COMPARISON & AI EQ ADVISOR ---
 with t3:
     cl, cr = st.columns(2); f1, f2 = cl.file_uploader("Mio", key="c1"), cr.file_uploader("Ref", key="c2")
     if f1 and f2:
@@ -182,19 +187,24 @@ with t3:
         ax_eq.set_xlim(20, 20000); ax_eq.legend(); plt.grid(True, which="both", alpha=0.1); st.pyplot(fig_eq)
         
         m1, m2, m3 = st.columns(3)
-        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}")
-        m2.metric("Delta Sub Mono", f"{d1['sub_mono']-d2['sub_mono']:.2f}")
-        m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
+        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}"); m2.metric("Delta Fase", f"{d1['phase']-d2['phase']:.2f}"); m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
 
-        if st.button("🚀 Strategia & Comparison"):
+        if st.button("🚀 GENERA STRATEGIA EQ (AI)"):
             if api_key:
+                # Calcolo differenze spettrali reali per l'AI
+                diffs = {k: d1['bands'][k] / (d2['bands'][k] + 1e-9) for k in d1['bands']}
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":f"Confronta questi dati. MIO: {d1['lufs']:.1f} LUFS, Air {d1['air']:.2%}. REF: {d2['lufs']:.1f} LUFS, Air {d2['air']:.2%}."}])
+                prompt = f"""ANALISI EQ CHIRURGICA:
+                - Bassi (20-250Hz): Il mio è {diffs['Bassi']:.2f}x rispetto alla ref.
+                - Medi (250-4k): Il mio è {diffs['Medi']:.2f}x rispetto alla ref.
+                - Alti (>4k): Il mio è {diffs['Alti']:.2f}x rispetto alla ref.
+                Basandoti su questi dati, suggerisci tagli o boost EQ specifici per matchare la reference."""
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":prompt}])
                 st.success(r.choices[0].message.content)
         
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Confronto drop..."):
+        if p_c := st.chat_input("Confronto tecnico..."):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
