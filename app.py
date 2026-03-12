@@ -35,13 +35,17 @@ if audio_to_analyze:
     with st.spinner("🚀 Eseguendo scansione multiparametrica..."):
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM
+        # 1. RILEVAMENTO BPM (FIX DEFINITIVO)
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
-        if isinstance(tempo_result, (tuple, list, np.ndarray)):
+        
+        # Se tempo_result è una tupla (BPM, beat_frames), prendiamo il primo elemento
+        if isinstance(tempo_result, tuple):
             bpm_val = tempo_result[0]
         else:
             bpm_val = tempo_result
-        bpm_final = float(bpm_val)
+            
+        # Assicuriamoci che sia un numero singolo (scalare)
+        bpm_final = float(np.array(bpm_val).item())
 
         # 2. RILEVAMENTO SCALA
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
@@ -51,7 +55,8 @@ if audio_to_analyze:
         # 3. LOUDNESS E DINAMICA
         def get_lufs(y, rate):
             data = y.reshape(-1, 1) if y.ndim == 1 else y.T
-            return pdn.Meter(rate).integrated_loudness(data)
+            meter = pdn.Meter(rate)
+            return meter.integrated_loudness(data)
         
         lufs_m = get_lufs(y_mix, sr)
         peak = np.max(np.abs(y_mix))
@@ -108,7 +113,7 @@ if audio_to_analyze:
                             model="gpt-4o-mini",
                             messages=api_messages
                         )
-                        # --- CORREZIONE QUI PER EVITARE TYPEERROR ---
+                        # Accesso corretto per libreria OpenAI v0.28
                         answer = response.choices[0].message.content
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
