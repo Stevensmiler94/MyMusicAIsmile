@@ -7,16 +7,16 @@ import pyloudnorm as pdn
 import openai
 
 # Configurazione Pagina
-st.set_page_config(page_title="AI Music Producer Assistant", layout="wide", page_icon="🎧")
+st.set_page_config(page_title="AI Music Producer & Songwriter", layout="wide", page_icon="🎹")
 
-st.title("🎧 AI Mix Assistant: Progressive House Edition")
-st.write("Analisi professionale ispirata allo stile di **Martin Garrix & Avicii**.")
+st.title("🎹 AI Music Assistant: Progressive House Creator")
+st.write("Analisi Mix e Songwriting emozionale stile **Martin Garrix & Avicii**.")
 
 # --- SIDEBAR: IMPOSTAZIONI ---
-st.sidebar.header("⚙️ Impostazioni & Upload")
+st.sidebar.header("⚙️ Configurazione")
 user_key = st.sidebar.text_input("Chiave API OpenAI (sk-...)", type="password")
 
-mode = st.sidebar.selectbox("Cosa vuoi analizzare?", 
+mode = st.sidebar.selectbox("Scegli Modalità:", 
                             ["Mix Completo vs Reference", "Traccia Singola (Lead, Bass, Kick)"])
 
 if mode == "Mix Completo vs Reference":
@@ -24,20 +24,24 @@ if mode == "Mix Completo vs Reference":
     uploaded_ref = st.sidebar.file_uploader("Traccia Reference (.wav/.mp3)", type=["wav", "mp3"], key="ref")
     audio_to_analyze = uploaded_mix
 else:
-    uploaded_stem = st.sidebar.file_uploader("Carica la tua Traccia Singola (es. solo Lead)", type=["wav", "mp3"], key="stem")
+    uploaded_stem = st.sidebar.file_uploader("Carica la tua Traccia Singola (Stem)", type=["wav", "mp3"], key="stem")
     uploaded_ref = None
     audio_to_analyze = uploaded_stem
 
-# --- LOGICA DI ANALISI ---
+# --- LOGICA DI ANALISI AUDIO ---
 if audio_to_analyze:
-    with st.spinner("🚀 Analizzando l'audio in profondità..."):
-        # Caricamento Audio (primi 30 secondi)
+    with st.spinner("🚀 Analizzando l'audio e rilevando BPM/Scala..."):
+        # Caricamento Audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        if uploaded_ref:
-            y_ref, _ = librosa.load(uploaded_ref, duration=30)
-        
-        # 1. LOUDNESS (LUFS)
+        # 1. RILEVAMENTO BPM E SCALA
+        tempo, _ = librosa.beat.beat_track(y=y_mix, sr=sr)
+        chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
+        notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
+        key_idx = np.argmax(np.mean(chroma, axis=1))
+        key_detected = notes[key_idx]
+
+        # 2. LOUDNESS (LUFS)
         def get_lufs(y, rate):
             data = y.reshape(-1, 1) if y.ndim == 1 else y.T
             meter = pdn.Meter(rate)
@@ -45,102 +49,83 @@ if audio_to_analyze:
 
         lufs_m = get_lufs(y_mix, sr)
         
-        # 2. CREST FACTOR (DINAMICA)
+        # 3. CREST FACTOR (DINAMICA)
         peak = np.max(np.abs(y_mix))
         rms = np.sqrt(np.mean(y_mix**2))
         crest_factor = 20 * np.log10(peak / (rms + 1e-9))
 
-        # 3. SPETTRO EQ
-        spec_m = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
-
-        # --- LAYOUT RISULTATI ---
+        # --- LAYOUT TECNICO ---
         st.divider()
-        col_m1, col_m2, col_m3 = st.columns(3)
-        
-        with col_m1:
-            st.metric("Loudness (Volume)", f"{lufs_m:.1f} LUFS")
-            st.caption("Target EDM: -7/-9 LUFS")
-        
-        with col_m2:
-            st.metric("Crest Factor (Punch)", f"{crest_factor:.1f} dB")
-            st.caption("Dinamica dei transienti")
-
-        if uploaded_ref:
-            lufs_r = get_lufs(y_ref, sr)
-            with col_m3:
-                st.metric("Loudness Reference", f"{lufs_r:.1f} LUFS")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("BPM Stimati", f"{int(tempo)}")
+        c2.metric("Scala Rilevata", f"{key_detected}")
+        c3.metric("Loudness", f"{lufs_m:.1f} LUFS")
+        c4.metric("Crest Factor", f"{crest_factor:.1f} dB")
 
         # --- GRAFICI ---
-        st.subheader("📊 Analisi Spettrale ed EQ")
-        fig_eq, ax_eq = plt.subplots(figsize=(10, 3))
-        ax_eq.plot(spec_m, label="Tua Traccia", color="#00f2ff", linewidth=1.5)
-        if uploaded_ref:
-            spec_r = np.mean(librosa.feature.melspectrogram(y=y_ref, sr=sr), axis=1)
-            ax_eq.plot(spec_r, label="Reference (Garrix Style)", color="#ff9100", alpha=0.5)
-        ax_eq.set_yscale('log')
-        ax_eq.set_facecolor('#1e1e1e')
-        ax_eq.legend()
-        st.pyplot(fig_eq)
-
-        st.subheader("🌊 Visualizzazione Waveform e Zoom")
-        fig_wave, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+        st.subheader("📊 Visualizzazione Tecnica")
+        col_g1, col_g2 = st.columns(2)
         
-        # Waveform intera
-        librosa.display.waveshow(y_mix, sr=sr, ax=ax1, color='#00f2ff')
-        ax1.set_title("Intero (30 sec)")
-        
-        # Zoom primi 5 secondi per il punch
-        librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax2, color='#ff00ff')
-        ax2.set_title("Zoom Iniziale (Dettaglio Transienti - 5 sec)")
-        plt.tight_layout()
-        st.pyplot(fig_wave)
+        with col_g1:
+            # EQ Spectrum
+            spec_m = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
+            fig_eq, ax_eq = plt.subplots(figsize=(10, 5))
+            ax_eq.plot(spec_m, color="#00f2ff")
+            ax_eq.set_title("Spettro di Frequenza")
+            ax_eq.set_yscale('log')
+            st.pyplot(fig_eq)
 
-        # --- FEEDBACK IA ---
+        with col_g2:
+            # Waveform Zoom
+            fig_w, ax_w = plt.subplots(figsize=(10, 5))
+            librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax_w, color='#ff00ff')
+            ax_w.set_title("Zoom Transienti (Primi 5s)")
+            st.pyplot(fig_w)
+
+        # --- SEZIONE SONGWRITING ---
         st.divider()
-        st.subheader("🤖 Il Parere del Produttore AI")
+        st.subheader("✍️ AI Songwriter & Vocal Guide")
+        guida_testo = st.text_area("Di cosa deve parlare il testo? (Linee guida)", "Nostalgia, summer nights, feeling alive")
         
-        if st.button("✨ Genera Analisi Professionale e Correzioni"):
+        col_btn1, col_btn2 = st.columns(2)
+        
+        if col_btn1.button("✨ Genera Testo e Melodia"):
             if user_key:
                 openai.api_key = user_key
-                tipo_traccia = "Mix finale" if mode == "Mix Completo vs Reference" else "Traccia singola (Stem)"
-                
-                prompt = f"""
-                Sei un esperto produttore di Progressive House (stile Martin Garrix, Avicii, Alesso).
-                Analizza questa {tipo_traccia}.
-                DATI TECNICI:
-                - Loudness: {lufs_m:.1f} LUFS
-                - Crest Factor: {crest_factor:.1f} dB
-                
+                prompt_song = f"""
+                Sei un paroliere e vocal producer Progressive House (stile Martin Garrix/Avicii).
+                PARAMETRI: BPM {int(tempo)}, Scala {key_detected}.
+                TEMA: {guida_testo}.
                 COMPITI:
-                1. Commenta il volume e la dinamica.
-                2. Indica quali frequenze tagliare o enfatizzare.
-                3. Suggerisci plugin specifici (es. OTT, Limiter, EQ) e settaggi.
-                4. Se è un Lead: parla di brillantezza e layering. Se è un mix: parla di sidechain e impatto del drop.
-                Sii tecnico, diretto e usa un tono professionale.
+                1. 3 Titoli Emozionali in inglese.
+                2. Testo completo (Verse, Build-up, Chorus) in inglese ritmico.
+                3. Guida melodica: descrivi come cantare le note (es. 'inizia basso sulla tonica {key_detected} e sali di un'ottava nel drop').
+                4. Consigli di processing vocale (es. Riverbero, Delay, Doubling).
                 """
-                
                 try:
-                    resp = openai.ChatCompletion.create(
-                        model="gpt-4o-mini", 
-                        messages=[{"role": "user", "content": prompt}]
-                    )
-                    st.success("✅ Analisi Completata:")
+                    resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_song}])
+                    st.success("🎤 Proposta Creativa:")
                     st.write(resp.choices.message.content)
                 except Exception as e:
                     st.error(f"Errore API: {e}")
             else:
-                st.error("⚠️ Inserisci la tua OpenAI API Key nella barra laterale per sbloccare l'analisi!")
+                st.error("Inserisci la API Key!")
 
-# --- GLOSSARIO & INFO (Sempre visibili fuori dal blocco if audio) ---
+        if col_btn2.button("🛠️ Genera Consigli Mixaggio"):
+            if user_key:
+                openai.api_key = user_key
+                prompt_mix = f"Analizza Mix: {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f}. Suggerisci 3 correzioni stile Garrix."
+                try:
+                    resp = openai.ChatCompletion.get(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_mix}])
+                    st.info("🎧 Suggerimenti Mix:")
+                    st.write(resp.choices.message.content)
+                except Exception as e:
+                    st.error(f"Errore API: {e}")
+
+# --- GLOSSARIO ---
 st.divider()
-with st.expander("📖 Glossario Tecnico: Impara a mixare come i Pro"):
-    st.markdown("""
-    *   **LUFS:** Il volume percepito. In Progressive House il drop deve essere "loud" (-7/-8 LUFS).
-    *   **Crest Factor:** La differenza tra picchi e media. Se è basso, il suono è compresso e solido.
-    *   **Sidechain:** L'effetto che abbassa il basso quando colpisce il kick. Vitale per il groove.
-    *   **High-Pass Filter:** Taglio delle basse frequenze inutili (su lead e voci) per evitare il "fango" nel mix.
-    *   **Transienti:** L'impatto iniziale di un suono. Non schiacciarli troppo o perderai energia nel drop.
-    """)
+with st.expander("📖 Glossario Tecnico Rapido"):
+    st.write("- **LUFS**: Volume percepito. -7/-9 per i drop EDM.\n- **Crest Factor**: Differenza picchi/media. 8-10dB è ottimo per i lead.\n- **Scala Musicale**: La chiave in cui devi cantare o suonare.")
 
 if not (uploaded_mix if mode == "Mix Completo vs Reference" else uploaded_stem):
-    st.info("👋 Benvenuto! Carica i file nella sidebar a sinistra per iniziare l'analisi.")
+    st.info("👋 Carica la tua base nella sidebar per iniziare!")
