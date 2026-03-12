@@ -34,10 +34,18 @@ if audio_to_analyze:
         # Caricamento Audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM E SCALA (Correzione Array)
+        # 1. RILEVAMENTO BPM (Correzione definitiva per versioni diverse di librosa)
         tempo_data = librosa.beat.beat_track(y=y_mix, sr=sr)
-        tempo = tempo_data[0] if isinstance(tempo_data, (list, np.ndarray)) else tempo_data
+        # Estraiamo il valore numerico indipendentemente dal formato di output
+        if isinstance(tempo_data, tuple):
+            bpm_val = tempo_data[0]
+        else:
+            bpm_val = tempo_data
         
+        # Convertiamo in float standard di Python per evitare errori con int()
+        bpm_final = float(np.atleast_1d(bpm_val)[0])
+        
+        # Rilevamento Scala
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_idx = np.argmax(np.mean(chroma, axis=1))
@@ -59,7 +67,7 @@ if audio_to_analyze:
         # --- LAYOUT TECNICO ---
         st.divider()
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("BPM Stimati", f"{int(np.round(tempo))}")
+        c1.metric("BPM Stimati", f"{int(round(bpm_final))}")
         c2.metric("Scala Rilevata", f"{key_detected}")
         c3.metric("Loudness", f"{lufs_m:.1f} LUFS")
         c4.metric("Crest Factor", f"{crest_factor:.1f} dB")
@@ -92,7 +100,7 @@ if audio_to_analyze:
         if col_btn1.button("✨ Genera Testo e Melodia"):
             if user_key:
                 openai.api_key = user_key
-                prompt_song = f"Songwriter EDM. BPM {int(tempo)}, Scala {key_detected}. Tema: {guida_testo}. Scrivi Titoli, Testo inglese e Guida Melodia."
+                prompt_song = f"Songwriter EDM. BPM {int(round(bpm_final))}, Scala {key_detected}. Tema: {guida_testo}. Scrivi Titoli, Testo inglese e Guida Melodia."
                 try:
                     resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_song}])
                     st.success("🎤 Proposta Creativa:")
