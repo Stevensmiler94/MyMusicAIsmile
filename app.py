@@ -34,8 +34,10 @@ if audio_to_analyze:
         # Caricamento Audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM E SCALA
-        tempo, _ = librosa.beat.beat_track(y=y_mix, sr=sr)
+        # 1. RILEVAMENTO BPM E SCALA (Correzione Array)
+        tempo_data = librosa.beat.beat_track(y=y_mix, sr=sr)
+        tempo = tempo_data[0] if isinstance(tempo_data, (list, np.ndarray)) else tempo_data
+        
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_idx = np.argmax(np.mean(chroma, axis=1))
@@ -57,7 +59,7 @@ if audio_to_analyze:
         # --- LAYOUT TECNICO ---
         st.divider()
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("BPM Stimati", f"{int(tempo)}")
+        c1.metric("BPM Stimati", f"{int(np.round(tempo))}")
         c2.metric("Scala Rilevata", f"{key_detected}")
         c3.metric("Loudness", f"{lufs_m:.1f} LUFS")
         c4.metric("Crest Factor", f"{crest_factor:.1f} dB")
@@ -67,7 +69,6 @@ if audio_to_analyze:
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
-            # EQ Spectrum
             spec_m = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
             fig_eq, ax_eq = plt.subplots(figsize=(10, 5))
             ax_eq.plot(spec_m, color="#00f2ff")
@@ -76,7 +77,6 @@ if audio_to_analyze:
             st.pyplot(fig_eq)
 
         with col_g2:
-            # Waveform Zoom
             fig_w, ax_w = plt.subplots(figsize=(10, 5))
             librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax_w, color='#ff00ff')
             ax_w.set_title("Zoom Transienti (Primi 5s)")
@@ -85,23 +85,14 @@ if audio_to_analyze:
         # --- SEZIONE SONGWRITING ---
         st.divider()
         st.subheader("✍️ AI Songwriter & Vocal Guide")
-        guida_testo = st.text_area("Di cosa deve parlare il testo? (Linee guida)", "Nostalgia, summer nights, feeling alive")
+        guida_testo = st.text_area("Di cosa deve parlare il testo?", "Nostalgia, summer nights, feeling alive")
         
         col_btn1, col_btn2 = st.columns(2)
         
         if col_btn1.button("✨ Genera Testo e Melodia"):
             if user_key:
                 openai.api_key = user_key
-                prompt_song = f"""
-                Sei un paroliere e vocal producer Progressive House (stile Martin Garrix/Avicii).
-                PARAMETRI: BPM {int(tempo)}, Scala {key_detected}.
-                TEMA: {guida_testo}.
-                COMPITI:
-                1. 3 Titoli Emozionali in inglese.
-                2. Testo completo (Verse, Build-up, Chorus) in inglese ritmico.
-                3. Guida melodica: descrivi come cantare le note (es. 'inizia basso sulla tonica {key_detected} e sali di un'ottava nel drop').
-                4. Consigli di processing vocale (es. Riverbero, Delay, Doubling).
-                """
+                prompt_song = f"Songwriter EDM. BPM {int(tempo)}, Scala {key_detected}. Tema: {guida_testo}. Scrivi Titoli, Testo inglese e Guida Melodia."
                 try:
                     resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_song}])
                     st.success("🎤 Proposta Creativa:")
@@ -114,9 +105,9 @@ if audio_to_analyze:
         if col_btn2.button("🛠️ Genera Consigli Mixaggio"):
             if user_key:
                 openai.api_key = user_key
-                prompt_mix = f"Analizza Mix: {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f}. Suggerisci 3 correzioni stile Garrix."
+                prompt_mix = f"Analizza Mix EDM: {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f}. Suggerisci 3 correzioni stile Garrix."
                 try:
-                    resp = openai.ChatCompletion.get(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_mix}])
+                    resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt_mix}])
                     st.info("🎧 Suggerimenti Mix:")
                     st.write(resp.choices.message.content)
                 except Exception as e:
