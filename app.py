@@ -33,6 +33,7 @@ def get_platinum_stats(file_bytes):
     if y_stereo.ndim == 1: y_stereo = np.vstack([y_stereo, y_stereo])
     y_mono = librosa.to_mono(y_stereo)
     
+    # Spettrogramma e EQ
     S = np.abs(librosa.stft(y_mono))
     freqs = librosa.fft_frequencies(sr=sr)
     avg_psd = np.mean(S, axis=1)
@@ -72,10 +73,9 @@ with st.sidebar:
             st.session_state.progetti[d_l["nome"]] = d_l["dati"]
             st.session_state.progetto_attivo = d_l["nome"]
             st.rerun()
-        except: st.error("Errore nel caricamento del file JSON.")
+        except: st.error("Errore file JSON.")
 
     st.session_state.progetto_attivo = st.selectbox("Scenario Attivo", list(st.session_state.progetti.keys()))
-    
     curr = st.session_state.progetti[st.session_state.progetto_attivo]
     st.download_button("📥 Esporta Studio", json.dumps({"nome": st.session_state.progetto_attivo, "dati": curr}), file_name=f"{st.session_state.progetto_attivo}.json")
 
@@ -89,7 +89,7 @@ with t1:
     audio_recorder(text="Registra idea vocale")
     for m in st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]:
         with st.chat_message(m["role"]): st.write(m["content"])
-    if p_s := st.chat_input("Chiedi un consiglio sul songwriting..."):
+    if p_s := st.chat_input("Consigli songwriting..."):
         if api_key:
             client = OpenAI(api_key=api_key)
             r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]+[{"role":"user","content":p_s}])
@@ -111,14 +111,28 @@ with t2:
         c4.metric("KB Space", f"{d['kick_bass']:.1f}")
         c5.metric("Mono Phase", f"{d['phase']:.2f}")
 
-        st.subheader("🎧 Isolamento Spettrale")
-        target = st.radio("Ascolta Banda:", ["Tutto", "Bassi (<200Hz)", "Alti (>8kHz)"], horizontal=True)
+        # --- ANALISI VISIVA ---
+        st.subheader("📊 Analisi Visiva Traccia")
+        v1, v2 = st.columns(2)
+        with v1:
+            fig_w, ax_w = plt.subplots(figsize=(10, 3))
+            librosa.display.waveshow(d['y'], sr=d['sr'], ax=ax_w, color="skyblue")
+            st.pyplot(fig_w)
+        with v2:
+            fig_s, ax_s = plt.subplots(figsize=(10, 3))
+            S_db = librosa.amplitude_to_db(np.abs(librosa.stft(d['y'])), ref=np.max)
+            librosa.display.specshow(S_db, x_axis='time', y_axis='mel', sr=d['sr'], ax=ax_s)
+            st.pyplot(fig_s)
+
+        st.subheader("🎧 Monitor di Isolamento")
+        target = st.radio("Filtro:", ["Tutto", "Bassi (<250Hz)", "Medi (250-4000Hz)", "Alti (>8kHz)"], horizontal=True)
         f_p = d['y']
-        if target == "Bassi (<200Hz)": f_p = apply_filter(d['y'], 20, 200, d['sr'])
+        if target == "Bassi (<250Hz)": f_p = apply_filter(d['y'], 20, 250, d['sr'])
+        elif target == "Medi (250-4000Hz)": f_p = apply_filter(d['y'], 250, 4000, d['sr'])
         elif target == "Alti (>8kHz)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_p, sample_rate=d['sr'])
 
-        if st.button("🪄 Genera Checklist Strategica Mix (ITA)"):
+        if st.button("🪄 Checklist Strategica Mix (ITA)"):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 prompt_m = f"Dati: Air {d['air']:.2%}, Width {d['width']:.1f}%, Fase {d['phase']:.2f}, KB-Space {d['kick_bass']:.1f}. Analizza in italiano."
@@ -127,7 +141,7 @@ with t2:
 
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if p_m := st.chat_input("Fai una domanda sul mix..."):
+        if p_m := st.chat_input("Domanda sul mix..."):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]+[{"role":"user","content":p_m}])
@@ -142,7 +156,6 @@ with t3:
     f1, f2 = cl.file_uploader("Mio Mix", key="c1"), cr.file_uploader("Reference Pro", key="c2")
     if f1 and f2:
         d1, d2 = get_platinum_stats(f1), get_platinum_stats(f2)
-        
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.semilogx(d1['freqs'], librosa.amplitude_to_db(d1['psd']), label="Mio", color="cyan", lw=2)
         ax.semilogx(d2['freqs'], librosa.amplitude_to_db(d2['psd']), label="Ref", color="orange", alpha=0.6, lw=2)
