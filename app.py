@@ -32,17 +32,16 @@ else:
 
 # --- LOGICA DI ANALISI AUDIO ---
 if audio_to_analyze:
-    with st.spinner("🚀 Eseguendo scansione tecnica..."):
+    with st.spinner("🚀 Analisi tecnica in corso..."):
         # Carichiamo l'audio
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # --- FIX BPM DEFINITIVO ---
+        # --- FIX BPM DEFINITIVO (STRUTTURA ROBUSTA) ---
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
-        # Se è una tupla/lista, prendiamo il primo elemento (il tempo)
-        if isinstance(tempo_result, (tuple, list, np.ndarray)):
-            bpm_val = tempo_result[0]
-        else:
-            bpm_val = tempo_result
+        
+        # Estraiamo il primo valore numerico in modo universale
+        # Funziona se tempo_result è: float, np.ndarray, list o tuple
+        bpm_val = np.array(tempo_result).flatten()[0]
         bpm_final = float(bpm_val)
 
         # 2. RILEVAMENTO SCALA
@@ -93,11 +92,11 @@ if audio_to_analyze:
                 
                 system_instruction = f"""
                 Agisci come un Senior Mixing Engineer cattivo di Ableton Live. 
-                I dati reali estratti sono: Loudness {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f} dB, BPM {int(round(bpm_final))}, Scala {key_detected}.
+                I DATI REALI ESTRATTI DAL FILE SONO: Loudness {lufs_m:.1f} LUFS, Crest Factor {crest_factor:.1f} dB, BPM {int(round(bpm_final))}, Scala {key_detected}.
+                NON dire mai 'non posso sentire'. Usa questi numeri per dare un parere critico.
                 REGOLE:
-                1. Se il Crest Factor è alto (>11dB), il Kick è debole: suggerisci Saturator o Glue Comp.
+                1. Se il Crest Factor è alto (>11dB), il Kick è MOLLO. Suggerisci Saturator o Glue Comp.
                 2. Suggerisci plugin NATIVI ABLETON con settaggi precisi.
-                3. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti qui sopra.
                 """
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -106,11 +105,12 @@ if audio_to_analyze:
 
                 with st.chat_message("assistant"):
                     try:
-                        # Sintassi corretta per OpenAI v0.28
+                        # Chiamata compatibile con OpenAI v0.28
                         resp = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
                             messages=[{"role": "system", "content": system_instruction}] + st.session_state.messages
                         )
+                        # Accesso tramite dizionario per compatibilità
                         answer = resp['choices'][0]['message']['content']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
