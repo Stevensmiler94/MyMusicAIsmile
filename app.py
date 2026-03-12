@@ -54,7 +54,7 @@ if uploaded_mix and uploaded_ref:
             if user_key:
                 openai.api_key = user_key
                 prompt = f"Analizza: Mix a {lufs_m} LUFS vs Ref a {lufs_r}. EQ Mix ha valore medio {np.mean(spec_m)}. Dammi 3 consigli stile Martin Garrix."
-                resp = openai.ChatCompletion.create(model="gpt-3.5-turbo", messages=[{"role": "user", "content": prompt}])
+                resp = openai.ChatCompletion.create(model="gpt-4o-mini", messages=[{"role": "user", "content": prompt}])
                 st.success(resp.choices[0].message.content)
             else:
                 st.error("Inserisci la API Key nella sidebar!")
