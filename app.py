@@ -176,38 +176,67 @@ with t2:
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user", "content":p_m})
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":ans}); st.rerun()
 
-# --- TAB 3: COMPARISON & AI EQ ADVISOR ---
+# --- TAB 3: COMPARISON & AI EQ ADVISOR (COMPLETO) ---
 with t3:
-    cl, cr = st.columns(2); f1, f2 = cl.file_uploader("Mio", key="c1"), cr.file_uploader("Ref", key="c2")
+    st.subheader("🏆 AI Mastering Intelligence")
+    cl, cr = st.columns(2)
+    f1 = cl.file_uploader("Il tuo Mix", key="c1")
+    f2 = cr.file_uploader("Reference Track", key="c2")
+    
     if f1 and f2:
         d1, d2 = get_platinum_stats(f1), get_platinum_stats(f2)
+        
+        # Grafico Comparativo EQ
         fig_eq, ax_eq = plt.subplots(figsize=(12, 4))
         ax_eq.semilogx(d1['freqs'], librosa.amplitude_to_db(d1['psd']), label="Mio", color="#00d1ff")
         ax_eq.semilogx(d2['freqs'], librosa.amplitude_to_db(d2['psd']), label="Ref", color="#ff8700", alpha=0.6)
-        ax_eq.set_xlim(20, 20000); ax_eq.legend(); plt.grid(True, which="both", alpha=0.1); st.pyplot(fig_eq)
+        ax_eq.set_xlim(20, 20000)
+        ax_eq.set_title("Spectral Comparison (Mio vs Ref)")
+        ax_eq.legend()
+        plt.grid(True, which="both", alpha=0.1)
+        st.pyplot(fig_eq)
         
+        # Metriche di Differenza (Delta)
         m1, m2, m3 = st.columns(3)
-        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}"); m2.metric("Delta Fase", f"{d1['phase']-d2['phase']:.2f}"); m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
+        m1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}")
+        m2.metric("Delta Fase", f"{float(d1['phase'])-float(d2['phase']):.2f}")
+        m3.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
 
+        # Bottone Strategia EQ (AI Intelligence)
         if st.button("🚀 GENERA STRATEGIA EQ (AI)"):
             if api_key:
-                # Calcolo differenze spettrali reali per l'AI
                 diffs = {k: d1['bands'][k] / (d2['bands'][k] + 1e-9) for k in d1['bands']}
                 client = OpenAI(api_key=api_key)
                 prompt = f"""ANALISI EQ CHIRURGICA:
                 - Bassi (20-250Hz): Il mio è {diffs['Bassi']:.2f}x rispetto alla ref.
                 - Medi (250-4k): Il mio è {diffs['Medi']:.2f}x rispetto alla ref.
                 - Alti (>4k): Il mio è {diffs['Alti']:.2f}x rispetto alla ref.
-                Basandoti su questi dati, suggerisci tagli o boost EQ specifici per matchare la reference."""
+                Suggerisci tagli o boost EQ specifici per matchare la reference."""
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}, {"role":"user","content":prompt}])
                 st.success(r.choices[0].message.content)
         
+        st.divider()
+        st.subheader("💬 Chat di Confronto Tecnico")
+        
+        # Visualizzazione messaggi persistenti del Tab 3
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
-            with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Confronto tecnico..."):
+            with st.chat_message(m["role"]): 
+                st.write(m["content"])
+        
+        # Input Chat specifica per il confronto
+        if p_c := st.chat_input("Chiedi consigli sul drop o sul master...", key="chat_comp"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_inst}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
+                # Costruiamo lo storico messaggi includendo i dati tecnici correnti
+                context_msg = f"Dati attuali: Mio LUFS {d1['lufs']:.1f}, Ref LUFS {d2['lufs']:.1f}. Fase {d1['phase']:.2f}."
+                messages = [{"role":"system","content":sys_inst + " " + context_msg}] + \
+                           st.session_state.progetti[st.session_state.progetto_attivo]["comparison"] + \
+                           [{"role":"user","content":p_c}]
+                
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=messages)
                 ans = r.choices[0].message.content
+                
+                # Salvataggio nello stato del progetto attivo
                 st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user", "content":p_c})
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":ans}); st.rerun()
+                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":ans})
+                st.rerun()
