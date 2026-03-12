@@ -22,16 +22,16 @@ mode = st.sidebar.selectbox("Cosa vuoi analizzare?",
 if mode == "Mix Completo vs Reference":
     uploaded_mix = st.sidebar.file_uploader("Il tuo Mix (.wav/.mp3)", type=["wav", "mp3"], key="mix")
     uploaded_ref = st.sidebar.file_uploader("Traccia Reference (.wav/.mp3)", type=["wav", "mp3"], key="ref")
+    audio_to_analyze = uploaded_mix
 else:
     uploaded_stem = st.sidebar.file_uploader("Carica la tua Traccia Singola (es. solo Lead)", type=["wav", "mp3"], key="stem")
     uploaded_ref = None
+    audio_to_analyze = uploaded_stem
 
 # --- LOGICA DI ANALISI ---
-if (mode == "Mix Completo vs Reference" and uploaded_mix and uploaded_ref) or (mode == "Traccia Singola (Lead, Bass, Kick)" and uploaded_stem):
-    
+if audio_to_analyze:
     with st.spinner("🚀 Analizzando l'audio in profondità..."):
         # Caricamento Audio (primi 30 secondi)
-        audio_to_analyze = uploaded_mix if mode == "Mix Completo vs Reference" else uploaded_stem
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
         if uploaded_ref:
@@ -125,13 +125,13 @@ if (mode == "Mix Completo vs Reference" and uploaded_mix and uploaded_ref) or (m
                         messages=[{"role": "user", "content": prompt}]
                     )
                     st.success("✅ Analisi Completata:")
-                    st.write(resp.choices[0].message.content)
+                    st.write(resp.choices.message.content)
                 except Exception as e:
                     st.error(f"Errore API: {e}")
             else:
                 st.error("⚠️ Inserisci la tua OpenAI API Key nella barra laterale per sbloccare l'analisi!")
 
-# --- GLOSSARIO ---
+# --- GLOSSARIO & INFO (Sempre visibili fuori dal blocco if audio) ---
 st.divider()
 with st.expander("📖 Glossario Tecnico: Impara a mixare come i Pro"):
     st.markdown("""
@@ -142,5 +142,5 @@ with st.expander("📖 Glossario Tecnico: Impara a mixare come i Pro"):
     *   **Transienti:** L'impatto iniziale di un suono. Non schiacciarli troppo o perderai energia nel drop.
     """)
 
-else:
+if not (uploaded_mix if mode == "Mix Completo vs Reference" else uploaded_stem):
     st.info("👋 Benvenuto! Carica i file nella sidebar a sinistra per iniziare l'analisi.")
