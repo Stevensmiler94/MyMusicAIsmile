@@ -7,20 +7,19 @@ import pyloudnorm as pdn
 import openai
 
 # Configurazione Pagina
-st.set_page_config(page_title="AI Music Producer Assistant", layout="wide", page_icon="🎹")
+st.set_page_config(page_title="AI Music Master Assistant", layout="wide", page_icon="🎧")
 
-# Inizializzazione della cronologia chat se non esiste
+# Inizializzazione cronologia chat
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-st.title("🎹 AI Music Assistant: Interattivo")
-st.write("Analisi Mix e Songwriting con **Chat di approfondimento**.")
+st.title("🎧 AI Music Master: Pro Studio Edition")
+st.write("Analisi avanzata: **Saturazione, Riverbero, Immagine Stereo e Vocal FX**.")
 
-# --- SIDEBAR: IMPOSTAZIONI ---
-st.sidebar.header("⚙️ Configurazione")
+# --- SIDEBAR ---
+st.sidebar.header("⚙️ Studio Settings")
 user_key = st.sidebar.text_input("Chiave API OpenAI (sk-...)", type="password")
-
-mode = st.sidebar.selectbox("Scegli Modalità:", ["Mix Completo vs Reference", "Traccia Singola (Stem)"])
+mode = st.sidebar.selectbox("Modalità Analisi:", ["Mix Completo vs Reference", "Traccia Singola (Stem)"])
 
 if mode == "Mix Completo vs Reference":
     uploaded_mix = st.sidebar.file_uploader("Il tuo Mix", type=["wav", "mp3"], key="mix")
@@ -33,22 +32,21 @@ else:
 
 # --- LOGICA DI ANALISI AUDIO ---
 if audio_to_analyze:
-    with st.spinner("🚀 Analizzando l'audio..."):
+    with st.spinner("🚀 Eseguendo scansione multiparametrica..."):
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # Rilevamento BPM e Scala
-        tempo_data = librosa.beat.beat_track(y=y_mix, sr=sr)
-        bpm_val = tempo_data if isinstance(tempo_data, (list, np.ndarray, tuple)) else tempo_data
-        bpm_final = float(np.atleast_1d(bpm_val))
-        
+        # 1. RILEVAMENTO BPM E SCALA
+        tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
+        bpm_final = float(np.array(tempo_result).flatten()[0])
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_detected = notes[np.argmax(np.mean(chroma, axis=1))]
 
-        # Loudness e Dinamica
+        # 2. LOUDNESS E DINAMICA
         def get_lufs(y, rate):
             data = y.reshape(-1, 1) if y.ndim == 1 else y.T
             return pdn.Meter(rate).integrated_loudness(data)
+        
         lufs_m = get_lufs(y_mix, sr)
         crest_factor = 20 * np.log10(np.max(np.abs(y_mix)) / (np.sqrt(np.mean(y_mix**2)) + 1e-9))
 
@@ -60,53 +58,65 @@ if audio_to_analyze:
         c3.metric("Loudness", f"{lufs_m:.1f} LUFS")
         c4.metric("Crest Factor", f"{crest_factor:.1f} dB")
 
-        # --- GRAFICI (Compatti) ---
-        st.subheader("📊 Analisi Visiva")
+        # --- GRAFICI ---
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        ax1.plot(np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1), color="#00f2ff")
-        ax1.set_title("Spettro EQ")
+        spec = np.mean(librosa.feature.melspectrogram(y=y_mix, sr=sr), axis=1)
+        ax1.plot(spec, color="#00f2ff")
+        ax1.set_title("Spectral Balance (EQ)")
         ax1.set_yscale('log')
         librosa.display.waveshow(y_mix[:int(5*sr)], sr=sr, ax=ax2, color='#ff00ff')
-        ax2.set_title("Zoom Transienti (5s)")
+        ax2.set_title("Transient Punch (5s)")
         st.pyplot(fig)
 
-        # --- CHAT INTERATTIVA ---
+        # --- CHAT INTERATTIVA CON FOCALIZZAZIONE PARAMETRI ---
         st.divider()
-        st.subheader("💬 Chiedi approfondimenti all'Ingegnere AI")
+        st.subheader("💬 Parla con il tuo Mixing Engineer AI")
+        st.info("💡 L'IA è ora ottimizzata per analizzare: Saturazione armonica, Reverb tails, Delay timing, Stereo Width e Compressione.")
 
-        # Mostra messaggi precedenti
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-        # Input utente
-        if prompt := st.chat_input("Esempio: Come imposto il compressore per migliorare il Crest Factor?"):
+        if prompt := st.chat_input("Esempio: Come posso migliorare il riverbero sul Lead per non sporcare il mix?"):
             if user_key:
                 openai.api_key = user_key
-                # Aggiungi contesto tecnico al primo messaggio se la chat è vuota
-                context = ""
-                if len(st.session_state.messages) == 0:
-                    context = f"DATI TECNICI: {lufs_m:.1f} LUFS, {crest_factor:.1f} dB Crest Factor, BPM {int(bpm_final)}, Scala {key_detected}. Genere: Progressive House (Garrix style). "
                 
+                # ISTRUZIONI DI SISTEMA PER IL FOCUS PROFESSIONALE
+                system_instruction = f"""
+                Agisci come un Master Producer di Progressive House (stile Martin Garrix/Avicii). 
+                DATI TECNICI: {lufs_m:.1f} LUFS, {crest_factor:.1f}dB Crest Factor, BPM {int(bpm_final)}, Scala {key_detected}.
+                
+                Focalizzati su questi parametri nelle tue risposte:
+                1. SATURAZIONE: Suggerisci distorsione armonica per far bucare il mix (es. Soft Clipping o OTT).
+                2. RIVERBERO/DELAY: Analizza se la 'coda' è troppo lunga o se serve Sidechain Reverb.
+                3. STEREO WIDTH: Spiega come allargare i Lead e tenere il Kick in Mono.
+                4. COMPRESSIONE: Fornisci Attack/Release precisi per il genere EDM.
+                5. VOCALS: Suggerisci catene FX per voci emozionali (Doubling, Pitching).
+                """
+
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
 
                 with st.chat_message("assistant"):
                     try:
-                        full_prompt = context + prompt
+                        # Costruzione della memoria per l'API
+                        api_messages = [{"role": "system", "content": system_instruction}]
+                        for m in st.session_state.messages:
+                            api_messages.append({"role": m["role"], "content": m["content"]})
+
                         response = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
-                            messages=[{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
+                            messages=api_messages
                         )
-                        answer = response['choices'][0]['message']['content']
+                        answer = response['choices']['message']['content']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     except Exception as e:
-                        st.error(f"Errore: {e}")
+                        st.error(f"Errore API: {e}")
             else:
                 st.warning("⚠️ Inserisci la API Key nella sidebar!")
 
-# --- INFO ---
+# --- FOOTER ---
 if not (uploaded_mix if mode == "Mix Completo vs Reference" else uploaded_stem):
-    st.info("👋 Carica i file per avviare l'analisi e iniziare la chat.")
+    st.info("👋 Carica i tuoi file per iniziare la sessione di studio.")
