@@ -44,10 +44,10 @@ def get_platinum_stats(file_bytes):
     low_energy_ts = np.mean(S[low_idx, :], axis=0)
     kb_score = np.std(low_energy_ts) * 100 
     
-    # Stereo Width FIX (Estrazione valore scalare)
-    corr_matrix = np.corrcoef(y_stereo[0], y_stereo[1])
-    correlation = corr_matrix[0, 1] if not np.isnan(corr_matrix[0, 1]) else 1.0
-    width_val = float((1 - correlation) * 100)
+    # Stereo Width & Mono Compatibility (Phase)
+    corr = np.corrcoef(y_stereo[0], y_stereo[1])[0, 1]
+    width_val = float((1 - corr) * 100)
+    phase_compat = float(corr) # +1 mono, 0 wide, -1 out of phase
     
     # Stats
     lufs = pdn.Meter(sr).integrated_loudness(y_stereo.T)
@@ -55,7 +55,7 @@ def get_platinum_stats(file_bytes):
     crest = 20 * np.log10(np.max(np.abs(y_mono)) / (np.mean(rms) + 1e-9))
     
     return {"y": y_mono, "sr": sr, "lufs": float(lufs), "crest": float(crest), "air": float(air_val), 
-            "psd": avg_psd, "freqs": freqs, "width": width_val, "kick_bass": float(kb_score)}
+            "psd": avg_psd, "freqs": freqs, "width": width_val, "kick_bass": float(kb_score), "phase": phase_compat}
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -87,42 +87,51 @@ with t1:
     audio_recorder(text="Registra idea vocale")
     for m in st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]:
         with st.chat_message(m["role"]): st.write(m["content"])
-    if p_s := st.chat_input("Chiedi un consiglio..."):
+    if p_s := st.chat_input("Consigli melodia/testo..."):
         if api_key:
             client = OpenAI(api_key=api_key)
             r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]+[{"role":"user","content":p_s}])
             st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"user", "content":p_s})
-            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant", "content":r.choices[0].message.content})
+            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant", "content":r.choices.message.content})
             st.rerun()
 
 # --- TAB 2: MIXING DESK ---
 with t2:
-    st.header("Analisi Platinum")
+    st.header("Analisi Platinum+")
     f_mix = st.file_uploader("Carica Mix", type=["wav", "mp3"], key="u_mix")
     if f_mix:
         d = get_platinum_stats(f_mix)
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         c1.metric("Loudness", f"{d['lufs']:.1f} LUFS")
         c2.metric("Euphoric Air", f"{d['air']*100:.2f}%")
         c3.metric("Stereo Width", f"{d['width']:.1f}%")
         c4.metric("KB Space", f"{d['kick_bass']:.1f}")
+        c5.metric("Mono Phase", f"{d['phase']:.2f}", delta="OK" if d['phase']>0.3 else "Check Phase", delta_color="normal" if d['phase']>0 else "inverse")
 
-        st.subheader("🎧 Monitor di Isolamento")
+        st.subheader("🎧 Isolamento Spettrale")
         target = st.radio("Ascolta:", ["Tutto", "Bassi (<200Hz)", "Alti (>8kHz)"], horizontal=True)
         f_p = d['y']
         if target == "Bassi (<200Hz)": f_p = apply_filter(d['y'], 20, 200, d['sr'])
         elif target == "Alti (>8kHz)": f_p = apply_filter(d['y'], 8000, 16000, d['sr'])
         st.audio(f_p, sample_rate=d['sr'])
 
+        # TASTO ANALISI MIXING (REINTEGRATO)
+        if st.button("🪄 Genera Checklist Strategica Mix (ITA)"):
+            if api_key:
+                client = OpenAI(api_key=api_key)
+                prompt_m = f"Dati: Air {d['air']:.2%}, Width {d['width']:.1f}%, Fase {d['phase']:.2f}, KB-Space {d['kick_bass']:.1f}, Crest {d['crest']:.1f}. Analizza e dai 5 consigli."
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}, {"role":"user","content":prompt_m}])
+                st.success(r.choices.message.content)
+
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]:
             with st.chat_message(m["role"]): st.write(m["content"])
         if p_m := st.chat_input("Domanda sul mix..."):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                ctx = f"[DATI: Air {d['air']:.2%}, Width {d['width']:.1f}%, KB-Space {d['kick_bass']:.1f}] "
+                ctx = f"[DATI: Air {d['air']:.2%}, Width {d['width']:.1f}%, Fase {d['phase']:.2f}] "
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]+[{"role":"user","content":ctx + p_m}])
                 st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user", "content":p_m})
-                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":r.choices[0].message.content})
+                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":r.choices.message.content})
                 st.rerun()
 
 # --- TAB 3: COMPARISON ---
@@ -140,25 +149,26 @@ with t3:
         st.pyplot(fig)
         
         st.write("### 📊 Analisi Differenziale")
-        dm1, dm2, dm3 = st.columns(3)
+        dm1, dm2, dm3, dm4 = st.columns(4)
         dm1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}")
         dm2.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
         dm3.metric("Delta Kick-Bass", f"{d1['kick_bass']-d2['kick_bass']:.1f}")
+        dm4.metric("Delta Phase", f"{d1['phase']-d2['phase']:.2f}")
 
         if st.button("🚀 Strategia Mastering Platinum (ITA)"):
             if api_key:
                 client = OpenAI(api_key=api_key)
-                ctx_m = (f"MIO: {d1['lufs']:.1f}LUFS, Air {d1['air']:.2%}, KB {d1['kick_bass']:.1f}. "
-                         f"REF: {d2['lufs']:.1f}LUFS, Air {d2['air']:.2%}, KB {d2['kick_bass']:.1f}.")
+                ctx_m = (f"MIO: {d1['lufs']:.1f}LUFS, Air {d1['air']:.2%}, Fase {d1['phase']:.2f}. "
+                         f"REF: {d2['lufs']:.1f}LUFS, Air {d2['air']:.2%}, Fase {d2['phase']:.2f}.")
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction + " Consiglia catena plugin."},{"role":"user","content":ctx_m}])
-                st.success(r.choices[0].message.content)
+                st.success(r.choices.message.content)
 
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
             with st.chat_message(m["role"]): st.write(m["content"])
-        if p_c := st.chat_input("Perché il mio drop spinge meno?"):
+        if p_c := st.chat_input("Analisi comparativa..."):
             if api_key:
                 client = OpenAI(api_key=api_key)
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":p_c}])
                 st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user", "content":p_c})
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":r.choices[0].message.content})
+                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":r.choices.message.content})
                 st.rerun()
