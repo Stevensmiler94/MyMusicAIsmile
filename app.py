@@ -88,13 +88,13 @@ with t1:
         if api_key:
             client = OpenAI(api_key=api_key)
             r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"]+[{"role":"user","content":p_s}])
-            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"user","content":p_s})
-            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant","content":r.choices[0].message.content})
+            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"user", "content":p_s})
+            st.session_state.progetti[st.session_state.progetto_attivo]["songwriting"].append({"role":"assistant", "content":r.choices[0].message.content})
             st.rerun()
 
 # --- TAB 2: MIXING DESK ---
 with t2:
-    st.header("Analisi Platinum")
+    st.header("Analisi Mix Profonda")
     f_mix = st.file_uploader("Carica Mix", type=["wav", "mp3"], key="u_mix")
     if f_mix:
         d = get_platinum_stats(f_mix)
@@ -119,24 +119,40 @@ with t2:
                 client = OpenAI(api_key=api_key)
                 ctx = f"[DATI: Air {d['air']:.2%}, Width {d['width']:.1f}%, KB-Space {d['kick_bass']:.1f}] "
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["mixing"]+[{"role":"user","content":ctx + p_m}])
-                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user","content":p_m})
-                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant","content":r.choices[0].message.content})
+                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"user", "content":p_m})
+                st.session_state.progetti[st.session_state.progetto_attivo]["mixing"].append({"role":"assistant", "content":r.choices[0].message.content})
                 st.rerun()
 
 # --- TAB 3: COMPARISON ---
 with t3:
-    st.header("EQ Match & Comparison Chat")
+    st.header("Visual EQ Match & A/B Test")
     cl, cr = st.columns(2)
     f1, f2 = cl.file_uploader("Mio Mix", key="c1"), cr.file_uploader("Ref", key="c2")
     if f1 and f2:
         d1, d2 = get_platinum_stats(f1), get_platinum_stats(f2)
+        
+        # Grafico EQ
         fig, ax = plt.subplots(figsize=(12, 4))
         ax.semilogx(d1['freqs'], librosa.amplitude_to_db(d1['psd']), label="Mio", color="cyan", lw=2)
         ax.semilogx(d2['freqs'], librosa.amplitude_to_db(d2['psd']), label="Ref", color="orange", alpha=0.6, lw=2)
         ax.set_xlim(20, 20000); ax.legend(); plt.grid(True, which="both", alpha=0.1)
         st.pyplot(fig)
         
-        st.metric("Delta Kick-Bass Space", f"{d1['kick_bass']-d2['kick_bass']:.1f}")
+        # Metriche Delta
+        st.write("### 📊 Analisi Differenziale")
+        dm1, dm2, dm3 = st.columns(3)
+        dm1.metric("Delta LUFS", f"{d1['lufs']-d2['lufs']:.1f}")
+        dm2.metric("Delta Air", f"{(d1['air']-d2['air'])*100:.1f}%")
+        dm3.metric("Delta Kick-Bass", f"{d1['kick_bass']-d2['kick_bass']:.1f}")
+
+        # TASTO ANALISI AUTOMATICA (REINTEGRATO)
+        if st.button("🚀 Genera Strategia Mastering Platinum (ITA)"):
+            if api_key:
+                client = OpenAI(api_key=api_key)
+                ctx_master = (f"MIO: {d1['lufs']:.1f}LUFS, Air {d1['air']:.2%}, KB {d1['kick_bass']:.1f}. "
+                             f"REF: {d2['lufs']:.1f}LUFS, Air {d2['air']:.2%}, KB {d2['kick_bass']:.1f}.")
+                r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction + " Confronta le tracce e suggerisci la catena di plugin in italiano."}, {"role":"user","content":ctx_master}])
+                st.success(r.choices[0].message.content)
 
         # Chat Comparison
         for m in st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]:
@@ -146,6 +162,6 @@ with t3:
                 client = OpenAI(api_key=api_key)
                 ctx = f"[CONFRONTO: MIO Air {d1['air']:.2%}, KB {d1['kick_bass']:.1f} vs REF Air {d2['air']:.2%}, KB {d2['kick_bass']:.1f}] "
                 r = client.chat.completions.create(model="gpt-4o-mini", messages=[{"role":"system","content":sys_instruction}]+st.session_state.progetti[st.session_state.progetto_attivo]["comparison"]+[{"role":"user","content":ctx + p_c}])
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user","content":p_c})
-                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant","content":r.choices[0].message.content})
+                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"user", "content":p_c})
+                st.session_state.progetti[st.session_state.progetto_attivo]["comparison"].append({"role":"assistant", "content":r.choices[0].message.content})
                 st.rerun()
