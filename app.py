@@ -25,12 +25,17 @@ audio_file = st.sidebar.file_uploader("Carica il tuo file audio", type=["wav", "
 # --- LOGICA DI ANALISI AUDIO ---
 if audio_file:
     with st.spinner("⚡ Analisi dei dati in corso..."):
+        # Carichiamo l'audio
         y, sr = librosa.load(audio_file, duration=30)
         
         # --- FIX DEFINITIVO BPM ---
-        tempo_data = librosa.beat.beat_track(y=y, sr=sr)
-        # Estraiamo il valore numerico indipendentemente dal formato (array o scalare)
-        bpm_final = float(np.ravel(tempo_data)[0])
+        # Estraiamo solo il primo valore (tempo) ignorando il resto
+        tempo_result = librosa.beat.beat_track(y=y, sr=sr)
+        if isinstance(tempo_result, (tuple, list, np.ndarray)):
+            bpm_val = tempo_result[0]
+        else:
+            bpm_val = tempo_result
+        bpm_final = float(bpm_val)
         
         # Scala e Dati Tecnici
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
@@ -57,7 +62,7 @@ if audio_file:
         with col_g2:
             fig_w, ax_w = plt.subplots(figsize=(10, 4))
             librosa.display.waveshow(y[:int(5*sr)], sr=sr, ax=ax_w, color='#ff00ff')
-            ax_w.set_title("Zoom Transienti (5s)")
+            ax_w.set_title("Zoom Transienti (Primi 5s)")
             st.pyplot(fig_w)
 
         # Chat Interattiva
@@ -73,17 +78,14 @@ if audio_file:
                 
                 # ISTRUZIONE DI SISTEMA CON I DATI REALI (FORZA L'IA AD ANALIZZARE)
                 sys_msg = f"""
-                Agisci come un Senior Mixing Engineer di Ableton Live. 
-                I dati della traccia caricata dall'utente sono questi (USALI PER RISPONDERE):
-                - Loudness attuale: {lufs:.1f} LUFS.
-                - Crest Factor attuale: {crest:.1f} dB.
-                - BPM: {int(bpm_final)}, Scala: {key_detected}.
+                Sei un Senior Mixing Engineer cattivo di Ableton Live. 
+                I dati reali sono questi: Loudness {lufs:.1f} LUFS, Crest Factor {crest:.1f} dB, BPM {int(bpm_final)}, Scala {key_detected}.
 
-                REGOLE CRITICHE:
-                1. Se l'utente chiede 'come suonano kick e basso', guarda il CREST FACTOR. Se è sopra 11dB, di' che il kick è MOLLACCIO e suggerisci Saturator (Sinoid Fold) o Glue Compressor (Soft Clip).
-                2. Se chiede del mix in generale, guarda i LUFS. Se sono sopra -12dB, di' che il mix non ha ENERGIA festival.
-                3. Suggerisci plugin NATIVI ABLETON con parametri precisi (Threshold, Attack, Dry/Wet).
-                4. NON dire mai 'non posso sentire l'audio'. Usa i dati tecnici forniti qui sopra.
+                REGOLE:
+                1. Se il Crest Factor è sopra 11dB, il Kick è debole: suggerisci Saturator (Sinoid Fold) o Glue Comp (Soft Clip).
+                2. Se i LUFS sono sopra -12dB, il mix è moscio: suggerisci Limiter o OTT.
+                3. Suggerisci plugin NATIVI ABLETON con settaggi precisi (Attack, Release, Threshold).
+                4. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti qui sopra.
                 """
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -106,4 +108,4 @@ if audio_file:
 # Glossario
 st.divider()
 with st.expander("📖 Glossario Tecnico"):
-    st.write("- **LUFS**: Potenza reale. -8 è lo standard Garrix. - **Crest**: Punch. 8-10 è EDM, >13 è moscio.")
+    st.write("- **LUFS**: Potenza reale. -8 è lo standard EDM. - **Crest**: Punch. 8-10 è pro, >13 è moscio.")
