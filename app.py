@@ -28,16 +28,11 @@ if audio_file:
         # Carichiamo l'audio
         y, sr = librosa.load(audio_file, duration=30)
         
-        # --- FIX BPM DEFINITIVO ---
+        # --- FIX BPM UNIVERSALE ---
         tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-        # Se riceve una tupla (BPM, frames), estraiamo solo il primo valore
-        if isinstance(tempo_result, tuple):
-            bpm_val = tempo_result[0]
-        else:
-            bpm_val = tempo_result
-        
-        # Convertiamo in numero singolo (float) in modo sicuro
-        bpm_final = float(np.ravel(bpm_val)[0])
+        # Se è una tupla o lista, prendiamo il primo valore, altrimenti il valore stesso
+        bpm_val = tempo_result[0] if isinstance(tempo_result, (tuple, list, np.ndarray)) else tempo_result
+        bpm_final = float(bpm_val)
         
         # Scala e Dati Tecnici
         chroma = librosa.feature.chroma_stft(y=y, sr=sr)
@@ -78,16 +73,14 @@ if audio_file:
             if user_key:
                 openai.api_key = user_key
                 
-                # ISTRUZIONE DI SISTEMA CON I DATI REALI (FORZA L'IA AD ANALIZZARE)
+                # ISTRUZIONE DI SISTEMA CON I DATI REALI
                 sys_msg = f"""
-                Sei un Senior Mixing Engineer cattivo di Ableton Live. 
+                Agisci come un Senior Mixing Engineer cattivo di Ableton Live. 
                 I dati reali sono questi: Loudness {lufs:.1f} LUFS, Crest Factor {crest:.1f} dB, BPM {int(bpm_final)}, Scala {key_detected}.
-
                 REGOLE:
-                1. Se il Crest Factor è sopra 11dB, il Kick è debole: suggerisci Saturator (Sinoid Fold) o Glue Comp (Soft Clip).
-                2. Se i LUFS sono sopra -12dB, il mix è moscio: suggerisci Limiter o OTT.
-                3. Suggerisci plugin NATIVI ABLETON con settaggi precisi (Attack, Release, Threshold).
-                4. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti qui sopra per dare un parere critico.
+                1. Se il Crest Factor è sopra 11dB, il Kick è debole: suggerisci Saturator o Glue Comp.
+                2. Suggerisci plugin NATIVI ABLETON con settaggi precisi.
+                3. NON dire mai 'non posso sentire'. Usa i dati tecnici forniti.
                 """
 
                 st.session_state.messages.append({"role": "user", "content": prompt})
@@ -95,17 +88,19 @@ if audio_file:
 
                 with st.chat_message("assistant"):
                     try:
+                        # Chiamata API compatibile con versione 0.28
                         resp = openai.ChatCompletion.create(
                             model="gpt-4o-mini",
                             messages=[{"role": "system", "content": sys_msg}] + st.session_state.messages
                         )
-                        answer = resp.choices.message.content
+                        # --- ACCESSO CORRETTO AI DATI ---
+                        answer = resp['choices'][0]['message']['content']
                         st.markdown(answer)
                         st.session_state.messages.append({"role": "assistant", "content": answer})
                     except Exception as e:
                         st.error(f"Errore API: {e}")
             else:
-                st.warning("Inserisci la API Key nella sidebar!")
+                st.warning("Inserisci la API Key!")
 
 # Glossario
 st.divider()
