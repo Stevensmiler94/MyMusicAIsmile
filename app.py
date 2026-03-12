@@ -35,11 +35,21 @@ if audio_to_analyze:
     with st.spinner("🚀 Eseguendo scansione multiparametrica..."):
         y_mix, sr = librosa.load(audio_to_analyze, duration=30)
         
-        # 1. RILEVAMENTO BPM E SCALA (CORREZIONE ERRORE)
+        # 1. RILEVAMENTO BPM (FIX DEFINITIVO)
         tempo_result = librosa.beat.beat_track(y=y_mix, sr=sr)
-        # librosa restituisce (tempo, beat_frames), noi prendiamo solo tempo
-        bpm_final = float(tempo_result[0]) if isinstance(tempo_result, tuple) else float(tempo_result)
+        
+        # Gestione output librosa (può essere float o tuple)
+        if isinstance(tempo_result, (tuple, list, np.ndarray)):
+            # Se è una collezione, prendiamo il primo elemento (il tempo)
+            bpm_val = tempo_result[0]
+        else:
+            # Se è già un numero singolo
+            bpm_val = tempo_result
+            
+        # Forza la conversione a float standard di Python
+        bpm_final = float(np.array(bpm_val).item())
 
+        # Rilevamento Scala
         chroma = librosa.feature.chroma_stft(y=y_mix, sr=sr)
         notes = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
         key_detected = notes[np.argmax(np.mean(chroma, axis=1))]
@@ -84,10 +94,9 @@ if audio_to_analyze:
             if user_key:
                 openai.api_key = user_key
                 
-                # ISTRUZIONI DI SISTEMA
                 system_instruction = f"""
                 Agisci come un Master Producer di Progressive House (stile Martin Garrix/Avicii). 
-                DATI TECNICI: {lufs_m:.1f} LUFS, {crest_factor:.1f}dB Crest Factor, BPM {int(bpm_final)}, Scala {key_detected}.
+                DATI TECNICI: {lufs_m:.1f} LUFS, {crest_factor:.1f}dB Crest Factor, BPM {int(round(bpm_final))}, Scala {key_detected}.
                 Focus: SATURAZIONE (OTT, Soft Clip), REVERB (Sidechain Hall), STEREO (Imager), COMPRESSIONE (Fast Attack), VOCALS (FX Layering).
                 """
 
