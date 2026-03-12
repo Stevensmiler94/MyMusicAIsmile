@@ -26,13 +26,17 @@ if audio_file:
         # Caricamento Audio
         y, sr = librosa.load(audio_file, duration=30)
         
-        # --- FIX BPM UNIVERSALE ---
+        # --- FIX BPM UNIVERSALE (PYTHON 3.14 SAFE) ---
         tempo_result = librosa.beat.beat_track(y=y, sr=sr)
-        # Estraiamo il valore scalare in modo sicuro
-        if isinstance(tempo_result, (tuple, list, np.ndarray)):
-            bpm = float(np.ravel(tempo_result)[0])
+        
+        # Librosa 0.10+ restituisce (bpm, beat_frames), prendiamo solo il bpm
+        if isinstance(tempo_result, tuple):
+            bpm_raw = tempo_result[0]
         else:
-            bpm = float(tempo_result)
+            bpm_raw = tempo_result
+            
+        # Forziamo la conversione a float scalare rimuovendo strutture numpy
+        bpm = float(np.array(bpm_raw).item())
         
         # Analisi Loudness e Crest Factor
         lufs = pdn.Meter(sr).integrated_loudness(y.reshape(-1, 1) if y.ndim == 1 else y.T)
